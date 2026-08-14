@@ -60,66 +60,81 @@ export function MembershipPanel({ member }: { member: Member }) {
   const subscriptions = history.data ?? [];
   const current = subscriptions.find((s) => s.status === 'ACTIVE');
   const upcoming = subscriptions.find((s) => s.status === 'UPCOMING');
-  const owing = subscriptions.filter((s) => canTakePayment(s));
+  /**
+   * Anything finished. Live memberships are shown in the card above with their
+   * own actions, so they are deliberately not repeated down here — showing the
+   * same membership twice was the thing that made the two sections unreadable.
+   */
+  const past = subscriptions.filter(
+    (s) => s.status === 'EXPIRED' || s.status === 'CANCELLED',
+  );
 
   return (
-    <section className="mt-4 rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-semibold text-slate-800">Membership</h2>
-          <p className="mt-0.5 text-xs text-slate-500">
-            Cash is recorded by hand — there is no payment gateway.
+    <div className="mt-4 space-y-4">
+      <section className="rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-3">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-800">Current membership</h2>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Cash is recorded by hand — there is no payment gateway.
+            </p>
+          </div>
+          <Button size="sm" onClick={() => setSelling(true)}>
+            {current ? 'Sell another plan' : 'Sell a plan'}
+          </Button>
+        </header>
+
+        {history.isLoading ? (
+          <div className="flex items-center gap-2 px-5 py-8 text-sm text-slate-500" role="status">
+            <Spinner className="size-4 text-indigo-600" />
+            Loading membership…
+          </div>
+        ) : history.isError ? (
+          <ErrorState
+            error={history.error}
+            onRetry={() => history.refetch()}
+            retrying={history.isFetching}
+          />
+        ) : !current && !upcoming ? (
+          <p className="px-5 py-8 text-center text-sm text-slate-500">
+            No membership. This person has never bought a plan — they're a lead, not a paying
+            member.
           </p>
-        </div>
-        <Button size="sm" onClick={() => setSelling(true)}>
-          Sell a plan
-        </Button>
-      </div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {current && (
+              <LiveMembership
+                subscription={current}
+                eyebrow="Active now"
+                onPay={() => setPaying(current)}
+                onCancel={() => setCancelling(current)}
+              />
+            )}
+            {upcoming && (
+              <LiveMembership
+                subscription={upcoming}
+                eyebrow={current ? 'Renewal queued — starts when the current one ends' : 'Starts later'}
+                onPay={() => setPaying(upcoming)}
+                onCancel={() => setCancelling(upcoming)}
+              />
+            )}
+          </div>
+        )}
+      </section>
 
-      {history.isLoading ? (
-        <div className="flex items-center gap-2 py-6 text-sm text-slate-500" role="status">
-          <Spinner className="size-4 text-indigo-600" />
-          Loading membership…
-        </div>
-      ) : history.isError ? (
-        <ErrorState
-          error={history.error}
-          onRetry={() => history.refetch()}
-          retrying={history.isFetching}
-        />
-      ) : (
-        <>
-          <CurrentMembership current={current} upcoming={upcoming} />
-
-          {owing.length > 0 && (
-            <div className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-200 ring-inset">
-              <p className="font-medium">
-                {formatMoney(owing.reduce((sum, s) => sum + s.balance, 0))} still owing
-              </p>
-              <p className="mt-0.5 text-xs">
-                Take the balance at the desk and record it against the membership below.
-              </p>
-            </div>
-          )}
-
-          {subscriptions.length > 0 && (
-            <div className="mt-5">
-              <h3 className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
-                History
-              </h3>
-              <ul className="mt-2 divide-y divide-slate-100">
-                {subscriptions.map((subscription) => (
-                  <SubscriptionRow
-                    key={subscription.id}
-                    subscription={subscription}
-                    onPay={() => setPaying(subscription)}
-                    onCancel={() => setCancelling(subscription)}
-                  />
-                ))}
-              </ul>
-            </div>
-          )}
-        </>
+      {past.length > 0 && (
+        <section className="rounded-lg bg-slate-50 ring-1 ring-slate-200">
+          <header className="border-b border-slate-200 px-5 py-2.5">
+            <h2 className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+              Past memberships · {past.length}
+            </h2>
+          </header>
+          <ul className="divide-y divide-slate-200/70">
+            {past.map((subscription) => (
+              <PastMembershipRow key={subscription.id} subscription={subscription} />
+            ))}
+          </ul>
+        </section>
       )}
 
       <SellPlanDialog
@@ -196,122 +211,130 @@ export function MembershipPanel({ member }: { member: Member }) {
           );
         }}
       />
-    </section>
-  );
-}
-
-function CurrentMembership({
-  current,
-  upcoming,
-}: {
-  current: Subscription | undefined;
-  upcoming: Subscription | undefined;
-}) {
-  if (!current && !upcoming) {
-    return (
-      <p className="mt-4 rounded-md bg-slate-50 px-3 py-3 text-sm text-slate-600">
-        No membership. This person has never bought a plan — they're a lead, not a paying member.
-      </p>
-    );
-  }
-
-  const live = current ?? upcoming!;
-  const expiring = current && current.daysRemaining <= 7;
-
-  return (
-    <div
-      className={`mt-4 rounded-md px-4 py-3 ring-1 ring-inset ${
-        current
-          ? expiring
-            ? 'bg-amber-50 ring-amber-200'
-            : 'bg-emerald-50 ring-emerald-200'
-          : 'bg-indigo-50 ring-indigo-200'
-      }`}
-    >
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <p className="text-base font-semibold text-slate-900">{live.planName}</p>
-        <Badge tone={SUBSCRIPTION_TONES[live.status]}>
-          {SUBSCRIPTION_STATUS_LABELS[live.status]}
-        </Badge>
-      </div>
-      <p className="mt-1 text-sm text-slate-700">
-        {formatDate(live.startDate)} → {formatDate(live.endDate)}
-        {current && (
-          <>
-            {' · '}
-            <strong>
-              {current.daysRemaining < 0
-                ? `expired ${formatDayCount(current.daysRemaining)} ago`
-                : current.daysRemaining === 0
-                  ? 'ends today'
-                  : `${formatDayCount(current.daysRemaining)} left`}
-            </strong>
-          </>
-        )}
-      </p>
-      {current && upcoming && (
-        <p className="mt-1 text-sm text-slate-700">
-          Renewal queued: <strong>{upcoming.planName}</strong> from{' '}
-          {formatDate(upcoming.startDate)}, covered to {formatDate(upcoming.endDate)}.
-        </p>
-      )}
     </div>
   );
 }
 
-function SubscriptionRow({
+/** How far through the term we are, for the progress bar. */
+function elapsedFraction(subscription: Subscription): number {
+  const start = new Date(subscription.startDate).getTime();
+  const end = new Date(subscription.endDate).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
+  const now = Date.now();
+  return Math.min(1, Math.max(0, (now - start) / (end - start)));
+}
+
+function paymentTone(subscription: Subscription): Tone {
+  if (subscription.paymentStatus === 'PAID') return 'green';
+  return subscription.paymentStatus === 'PARTIAL' ? 'amber' : 'red';
+}
+
+/**
+ * A membership that is running or about to. Given real weight — plan name, a
+ * countdown, and its own actions — because it is what the desk acts on.
+ */
+function LiveMembership({
   subscription,
+  eyebrow,
   onPay,
   onCancel,
 }: {
   subscription: Subscription;
+  eyebrow: string;
   onPay: () => void;
   onCancel: () => void;
 }) {
-  const paymentTone: Tone =
-    subscription.paymentStatus === 'PAID'
-      ? 'green'
-      : subscription.paymentStatus === 'PARTIAL'
-        ? 'amber'
-        : 'red';
+  const active = subscription.status === 'ACTIVE';
+  const expiringSoon = active && subscription.daysRemaining <= 7;
+  const accent = active
+    ? expiringSoon
+      ? 'bg-amber-500'
+      : 'bg-emerald-500'
+    : 'bg-indigo-500';
 
   return (
-    <li className="flex flex-wrap items-start justify-between gap-3 py-3">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="font-medium text-slate-900">{subscription.planName}</span>
+    <div className="flex gap-4 px-5 py-4">
+      <div className={`w-1 shrink-0 rounded-full ${accent}`} aria-hidden="true" />
+
+      <div className="min-w-0 flex-1">
+        <p className="text-xs font-medium tracking-wide text-slate-500 uppercase">{eyebrow}</p>
+
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <span className="text-lg font-semibold text-slate-900">{subscription.planName}</span>
           <Badge tone={SUBSCRIPTION_TONES[subscription.status]}>
             {SUBSCRIPTION_STATUS_LABELS[subscription.status]}
           </Badge>
-          <Badge tone={paymentTone}>{PAYMENT_STATUS_LABELS[subscription.paymentStatus]}</Badge>
+          <Badge tone={paymentTone(subscription)}>
+            {PAYMENT_STATUS_LABELS[subscription.paymentStatus]}
+          </Badge>
         </div>
-        <p className="mt-0.5 text-xs text-slate-500">
+
+        <p className="mt-1 text-sm text-slate-600">
           {formatDate(subscription.startDate)} → {formatDate(subscription.endDate)} ·{' '}
           {subscription.durationLabel}
         </p>
-        <p className="mt-0.5 text-xs text-slate-600">
-          {formatMoney(subscription.amountDue)} due
-          {subscription.discount > 0 && ` (${formatMoney(subscription.discount)} off)`} ·{' '}
-          {formatMoney(subscription.amountPaid)} paid
-          {subscription.balance > 0 && (
-            <span className="font-medium text-amber-700">
-              {' '}
-              · {formatMoney(subscription.balance)} owing
-            </span>
-          )}
-          {subscription.paymentMethod && ` · ${PAYMENT_METHOD_LABELS[subscription.paymentMethod]}`}
-        </p>
-        {subscription.notes && (
-          <p className="mt-0.5 text-xs whitespace-pre-wrap text-slate-500">{subscription.notes}</p>
+
+        {active && (
+          <div className="mt-2 max-w-sm">
+            <div className="h-1.5 overflow-hidden rounded-full bg-slate-200">
+              <div
+                className={`h-full ${accent}`}
+                style={{ width: `${Math.round(elapsedFraction(subscription) * 100)}%` }}
+              />
+            </div>
+            <p
+              className={`mt-1 text-sm font-semibold ${
+                expiringSoon ? 'text-amber-700' : 'text-emerald-700'
+              }`}
+            >
+              {subscription.daysRemaining < 0
+                ? `Expired ${formatDayCount(subscription.daysRemaining)} ago`
+                : subscription.daysRemaining === 0
+                  ? 'Ends today'
+                  : `${formatDayCount(subscription.daysRemaining)} left`}
+            </p>
+          </div>
         )}
-        {subscription.cancelledAt && (
-          <p className="mt-0.5 text-xs text-slate-500">
-            Cancelled {formatDate(subscription.cancelledAt)}
-            {subscription.cancelReason && ` — ${subscription.cancelReason}`}
+
+        <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm">
+          <div className="flex gap-1.5">
+            <dt className="text-slate-500">Due</dt>
+            <dd className="font-medium text-slate-800">{formatMoney(subscription.amountDue)}</dd>
+          </div>
+          <div className="flex gap-1.5">
+            <dt className="text-slate-500">Paid</dt>
+            <dd className="font-medium text-slate-800">{formatMoney(subscription.amountPaid)}</dd>
+          </div>
+          {subscription.balance > 0 && (
+            <div className="flex gap-1.5">
+              <dt className="text-amber-700">Owing</dt>
+              <dd className="font-semibold text-amber-700">{formatMoney(subscription.balance)}</dd>
+            </div>
+          )}
+          {subscription.discount > 0 && (
+            <div className="flex gap-1.5">
+              <dt className="text-slate-500">Discount</dt>
+              <dd className="font-medium text-slate-800">{formatMoney(subscription.discount)}</dd>
+            </div>
+          )}
+          {subscription.paymentMethod && (
+            <div className="flex gap-1.5">
+              <dt className="text-slate-500">Method</dt>
+              <dd className="font-medium text-slate-800">
+                {PAYMENT_METHOD_LABELS[subscription.paymentMethod]}
+              </dd>
+            </div>
+          )}
+        </dl>
+
+        {subscription.notes && (
+          <p className="mt-2 rounded-md bg-slate-50 px-3 py-2 text-sm whitespace-pre-wrap text-slate-600">
+            {subscription.notes}
           </p>
         )}
       </div>
-      <div className="flex shrink-0 gap-1">
+
+      <div className="flex shrink-0 flex-col items-end gap-2">
         {canTakePayment(subscription) && (
           <Button variant="secondary" size="sm" onClick={onPay}>
             Record payment
@@ -321,6 +344,34 @@ function SubscriptionRow({
           <Button variant="ghost" size="sm" onClick={onCancel}>
             Cancel
           </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** A finished membership. Deliberately quiet — it is a record, not something to act on. */
+function PastMembershipRow({ subscription }: { subscription: Subscription }) {
+  return (
+    <li className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-5 py-2.5 text-sm">
+      <div className="flex flex-wrap items-baseline gap-2">
+        <span className="font-medium text-slate-700">{subscription.planName}</span>
+        <span className="text-xs text-slate-500">
+          {formatDate(subscription.startDate)} → {formatDate(subscription.endDate)}
+        </span>
+        <Badge tone="slate">{SUBSCRIPTION_STATUS_LABELS[subscription.status]}</Badge>
+        {subscription.balance > 0 && (
+          <Badge tone="amber">{formatMoney(subscription.balance)} never collected</Badge>
+        )}
+      </div>
+      <div className="text-xs text-slate-500">
+        {formatMoney(subscription.amountPaid)} paid
+        {subscription.cancelledAt && (
+          <>
+            {' · cancelled '}
+            {formatDate(subscription.cancelledAt)}
+            {subscription.cancelReason && ` — ${subscription.cancelReason}`}
+          </>
         )}
       </div>
     </li>
