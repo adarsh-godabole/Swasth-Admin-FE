@@ -10,6 +10,7 @@ import { ErrorState, LoadingBlock, WakingServerNotice } from '../components/stat
 import { useSlowRequest } from '../hooks/useSlowRequest';
 import { formatDate, formatPhone, initials, memberName } from '../lib/format';
 import { MemberDetailsFields } from '../members/MemberFormFields';
+import { MembershipPanel } from '../members/MembershipPanel';
 import { fromMember, toUpdatePayload, validateMemberForm } from '../members/form';
 import type { MemberFormErrors, MemberFormValues } from '../members/form';
 import {
@@ -87,7 +88,7 @@ export function MemberDetailPage() {
   function saveEdit() {
     if (!values || !member) return;
     const original = fromMember(member);
-    const found = validateMemberForm(values, { requirePhone: false, original });
+    const found = validateMemberForm(values, { requirePhone: false });
     setErrors(found);
     if (Object.keys(found).length > 0) return;
 
@@ -208,6 +209,8 @@ export function MemberDetailPage() {
           )}
         </div>
       </section>
+
+      {!editing && <MembershipPanel member={member} />}
 
       {editing ? (
         <form

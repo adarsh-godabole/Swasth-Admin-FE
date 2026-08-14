@@ -10,31 +10,78 @@ import { useMemberList } from '../members/queries';
 import { STATUS_LABELS } from '../api/types';
 import type {
   GymUserStatus,
+  Member,
   MemberSortBy,
-  MemberSource,
+  MembershipFilter,
   MemberListParams,
   SortOrder,
 } from '../api/types';
+import { summariseMembership } from '../members/membership';
+import { formatMoney } from '../lib/format';
 
 const PAGE_SIZE = 20;
 
 /**
- * The list mixes two populations: people registered at the desk, and anyone who
- * merely logged into the mobile app (source APP_SIGNUP, memberCode null, may
- * never have paid or visited). They're split into tabs so the desk isn't reading
- * a half-empty member-code column.
+ * The list mixes two populations: people who have actually bought a plan, and
+ * anyone who merely logged into the mobile app and was auto-linked to the gym.
+ * Splitting on `membershipStatus` rather than `source` is the cleaner divide —
+ * it separates paying members from people who have never bought anything,
+ * however they arrived.
  */
-type Tab = 'FRONT_DESK' | 'APP_SIGNUP' | 'ALL';
+type Tab = 'ALL' | MembershipFilter;
 
 const TABS: { id: Tab; label: string; blurb: string }[] = [
-  { id: 'FRONT_DESK', label: 'Members', blurb: 'Registered at the front desk.' },
   {
-    id: 'APP_SIGNUP',
-    label: 'App signups',
-    blurb: 'Signed up through the mobile app and never registered at the desk — leads, not members.',
+    id: 'ACTIVE',
+    label: 'Active',
+    blurb: 'Paid up with time left on their membership.',
   },
-  { id: 'ALL', label: 'Everyone', blurb: 'Every person linked to this gym, from any source.' },
+  {
+    id: 'EXPIRING',
+    label: 'Expiring',
+    blurb: 'Membership runs out inside the window below — worth a call.',
+  },
+  {
+    id: 'EXPIRED',
+    label: 'Expired',
+    blurb: 'Their membership has run out and no renewal is queued.',
+  },
+  {
+    id: 'NONE',
+    label: 'Leads',
+    blurb:
+      'Never bought a plan. Mostly people who signed up in the mobile app and were auto-linked to the gym — they may never have paid or visited.',
+  },
+  { id: 'ALL', label: 'Everyone', blurb: 'Every person linked to this gym.' },
 ];
+
+/** Windows offered for the Expiring tab. The API caps `expiringInDays` at 90. */
+const EXPIRING_WINDOWS = [7, 15, 30, 60, 90];
+
+/** Reads naturally after a number: "2 active members", "22 leads", "1 person". */
+const COUNT_NOUN: Record<Tab, [singular: string, plural: string]> = {
+  ACTIVE: ['active member', 'active members'],
+  EXPIRING: ['expiring member', 'expiring members'],
+  EXPIRED: ['expired member', 'expired members'],
+  NONE: ['lead', 'leads'],
+  ALL: ['person', 'people'],
+};
+
+const EMPTY_TITLES: Record<Tab, string> = {
+  ACTIVE: 'Nobody has an active membership',
+  EXPIRING: 'Nothing expiring in this window',
+  EXPIRED: 'No expired memberships',
+  NONE: 'No leads',
+  ALL: 'No members yet',
+};
+
+const EMPTY_DESCRIPTIONS: Record<Tab, string> = {
+  ACTIVE: 'Sell a plan from a member\u2019s page and they\u2019ll appear here.',
+  EXPIRING: 'Try a longer window, or check the Active tab.',
+  EXPIRED: 'Good news \u2014 nobody has lapsed.',
+  NONE: 'Everyone linked to this gym has bought a plan.',
+  ALL: 'Register the first walk-in to get started.',
+};
 
 const SORTABLE: { field: MemberSortBy; label: string; className?: string }[] = [
   { field: 'fullName', label: 'Name' },
@@ -47,7 +94,8 @@ export function MembersPage() {
   const [params, setParams] = useSearchParams();
   const searchInput = useRef<HTMLInputElement>(null);
 
-  const tab = (params.get('tab') as Tab | null) ?? 'FRONT_DESK';
+  const tab = (params.get('tab') as Tab | null) ?? 'ACTIVE';
+  const expiringInDays = Number(params.get('days') ?? '7') || 7;
   const status = (params.get('status') as GymUserStatus | null) ?? undefined;
   const sortBy = (params.get('sortBy') as MemberSortBy | null) ?? 'joinedAt';
   const sortOrder = (params.get('sortOrder') as SortOrder | null) ?? 'desc';
@@ -103,7 +151,8 @@ export function MembersPage() {
     sortOrder,
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
     ...(status ? { status } : {}),
-    ...(tab === 'ALL' ? {} : { source: tab as MemberSource }),
+    ...(tab === 'ALL' ? {} : { membershipStatus: tab }),
+    ...(tab === 'EXPIRING' ? { expiringInDays } : {}),
   };
 
   const list = useMemberList(query);
@@ -129,8 +178,8 @@ export function MembersPage() {
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Members</h1>
           <p className="mt-0.5 text-sm text-slate-500">
-            {data ? `${data.total} ${data.total === 1 ? 'person' : 'people'}` : ' '}
-            {activeTab.id !== 'ALL' && data ? ` in ${activeTab.label.toLowerCase()}` : ''}
+            {data ? `${data.total} ${COUNT_NOUN[tab][data.total === 1 ? 0 : 1]}` : ' '}
+            {tab === 'EXPIRING' && data ? ` within ${expiringInDays} days` : ''}
           </p>
         </div>
         <Button onClick={() => navigate('/members/new')}>Register member</Button>
@@ -185,6 +234,23 @@ export function MembersPage() {
             ))}
           </select>
 
+          {tab === 'EXPIRING' && (
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              Within
+              <select
+                value={expiringInDays}
+                onChange={(event) => update({ days: event.target.value })}
+                className="rounded-md bg-white px-2 py-2 text-sm ring-1 ring-slate-300 ring-inset focus:ring-2 focus:ring-indigo-600"
+              >
+                {EXPIRING_WINDOWS.map((days) => (
+                  <option key={days} value={days}>
+                    {days} days
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
           {filtered && (
             <Button
               variant="ghost"
@@ -219,27 +285,30 @@ export function MembersPage() {
           />
         ) : !data || data.items.length === 0 ? (
           <EmptyState
-            title={filtered ? 'No members match those filters' : `No ${activeTab.label.toLowerCase()} yet`}
+            title={filtered ? 'No members match those filters' : EMPTY_TITLES[tab]}
             description={
               filtered
                 ? 'Try a different search term, or clear the filters.'
-                : tab === 'APP_SIGNUP'
-                  ? 'Nobody has signed up through the mobile app without being registered here.'
-                  : 'Register the first walk-in to get started.'
+                : EMPTY_DESCRIPTIONS[tab]
             }
             action={
               filtered ? (
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    setSearch('');
-                    update({ search: undefined, status: undefined });
-                  }}
-                >
-                  Clear filters
-                </Button>
+                <div className="flex flex-wrap justify-center gap-2">
+                  {tab !== 'ALL' && debouncedSearch && (
+                    <Button onClick={() => update({ tab: 'ALL' })}>Search everyone</Button>
+                  )}
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setSearch('');
+                      update({ search: undefined, status: undefined });
+                    }}
+                  >
+                    Clear filters
+                  </Button>
+                </div>
               ) : (
-                tab !== 'APP_SIGNUP' && (
+                tab !== 'NONE' && (
                   <Button onClick={() => navigate('/members/new')}>Register member</Button>
                 )
               )
@@ -268,6 +337,9 @@ export function MembersPage() {
                     </th>
                     <th scope="col" className="px-4 py-2 font-medium">
                       Status
+                    </th>
+                    <th scope="col" className="px-4 py-2 font-medium">
+                      Membership
                     </th>
                     <th scope="col" className="px-4 py-2 font-medium">
                       App
@@ -310,6 +382,9 @@ export function MembersPage() {
                       <td className="px-4 py-2.5 text-slate-600">{formatPhone(member.phone)}</td>
                       <td className="px-4 py-2.5">
                         <StatusBadge status={member.status} />
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <MembershipCell member={member} />
                       </td>
                       <td className="px-4 py-2.5">
                         {member.hasAppAccount ? (
@@ -395,5 +470,26 @@ function SortHeader({
         </span>
       </button>
     </th>
+  );
+}
+
+/**
+ * What the member has bought, at a glance. A balance owing is called out
+ * separately — it is the thing the desk needs to act on.
+ */
+function MembershipCell({ member }: { member: Member }) {
+  const summary = summariseMembership(member.membership);
+  return (
+    <div className="min-w-40">
+      <Badge tone={summary.tone}>{summary.label}</Badge>
+      {member.membership && member.membership.balance > 0 && (
+        <span className="mt-1 block text-xs font-medium text-amber-700">
+          {formatMoney(member.membership.balance)} owing
+        </span>
+      )}
+      {member.membership && summary.detail && !member.membership.balance && (
+        <span className="mt-1 block text-xs text-slate-400">{summary.detail}</span>
+      )}
+    </div>
   );
 }

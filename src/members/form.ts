@@ -42,36 +42,12 @@ export type MemberFormErrors = Partial<Record<keyof MemberFormValues, string>>;
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/**
- * Fields the API cannot currently clear on PATCH — verified field by field
- * against the deployed backend. Sending `null` for these either 500s or corrupts
- * the value, so the form refuses to try and says why. See README "Known API
- * limitations". Remove an entry here once the backend is fixed.
- */
-export const UNCLEARABLE_FIELDS: Partial<Record<keyof MemberFormValues, string>> = {
-  email: "The API can't remove an email address yet — it returns a server error. Enter a different address instead.",
-  gender: "The API can't reset gender to unspecified yet — it returns a server error. Pick a different value instead.",
-  emergencyContactPhone:
-    "The API can't remove an emergency contact number yet — it returns a server error. Enter a different number instead.",
-  dateOfBirth:
-    "The API stores a removed date of birth as 1 Jan 1970 rather than clearing it. Enter a real date instead.",
-};
-
 /** Mirrors the API's validation table so staff see problems before a round trip. */
 export function validateMemberForm(
   values: MemberFormValues,
-  options: { requirePhone: boolean; original?: MemberFormValues },
+  options: { requirePhone: boolean },
 ): MemberFormErrors {
   const errors: MemberFormErrors = {};
-
-  // Refuse to clear what the API can't clear, rather than losing the edit silently.
-  if (options.original) {
-    for (const key of Object.keys(UNCLEARABLE_FIELDS) as (keyof MemberFormValues)[]) {
-      if (!values[key].trim() && options.original[key].trim()) {
-        errors[key] = UNCLEARABLE_FIELDS[key];
-      }
-    }
-  }
 
   if (options.requirePhone) {
     const phone = normalisePhone(values.phone);
@@ -185,9 +161,9 @@ export function fromMember(member: Member): MemberFormValues {
 
 /**
  * Diff against the original so PATCH sends only what changed. Clearing a field
- * is sent as `null` — verified as the only value the API accepts for removal
- * (`""` is rejected on validated fields). Fields listed in UNCLEARABLE_FIELDS are
- * never cleared; validation blocks that before we get here.
+ * is sent as `null`, which is the documented contract — `""` is rejected on
+ * validated fields. Sending `gender: null` resets it to `UNDISCLOSED`, since the
+ * column is not nullable.
  */
 export function toUpdatePayload(
   values: MemberFormValues,
@@ -203,7 +179,6 @@ export function toUpdatePayload(
     if (next === before) continue;
 
     if (next === '') {
-      if (key in UNCLEARABLE_FIELDS) continue;
       patch[key] = null;
       continue;
     }

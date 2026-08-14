@@ -1,8 +1,8 @@
 # Swasth Admin Portal
 
-Web admin portal for a gym's front desk. Today it does one job: **manage the
-gym's members** — register walk-ins, find them, edit them, suspend and reinstate
-them.
+Web admin portal for a gym's front desk: **manage the gym's members and sell
+them memberships** — register walk-ins, find them, edit them, suspend and
+reinstate them, sell and renew plans, and take cash against a balance.
 
 It talks to an existing deployed REST API which lives in a separate repo and is
 not modified from here.
@@ -66,9 +66,11 @@ src/
     session.ts      persisted tokens + user + gym, subscribable, outside React
     endpoints.ts    typed functions per endpoint
   auth/             AuthProvider: session state, sign in, sign out, role check
-  members/          queries (TanStack Query), form validation, shared form fields
+  members/          queries, form validation, shared form fields,
+                    membership presentation + the sell/pay/cancel panel
   components/       Button, Field, Modal, Toast, Badge, loading/empty/error states
-  routes/           LoginPage, MembersPage, RegisterMemberPage, MemberDetailPage
+  routes/           LoginPage, MembersPage, RegisterMemberPage, MemberDetailPage,
+                    PlansPage, RenewalsPage
   hooks/            useDebouncedValue, useCountdown, useSlowRequest
 ```
 
@@ -88,41 +90,76 @@ the `AuthProvider` observes and redirects to login.
 
 ### The member list mixes two populations
 
-Anyone who logs into the mobile app is auto-linked to the gym as a `MEMBER` with
-`source: APP_SIGNUP` and no member code, whether or not they ever paid or
-visited. They come back from `GET /members` alongside real registered members,
-so the list is split into tabs — **Members** (front desk, the default), **App
-signups** (leads), and **Everyone** — rather than showing a half-empty member
-code column.
+Anyone who logs into the mobile app is auto-linked to the gym as a `MEMBER`
+whether or not they ever paid or visited, and comes back from `GET /members`
+alongside real paying members. The list splits on `membershipStatus` rather than
+`source`, because what matters at the desk is whether someone has actually
+bought something:
+
+**Active** (the default working view) · **Expiring** (with a 7–90 day window) ·
+**Expired** · **Leads** (`membershipStatus=NONE`) · **Everyone**.
+
+Because the default view hides lapsed members, searching on a tab with no
+matches offers **Search everyone** — so a member whose plan ran out is still one
+click from being found.
+
+### Plans and memberships
+
+**Plans** ([src/routes/PlansPage.tsx](src/routes/PlansPage.tsx)) are what the gym
+sells. They are archived, never deleted, and editing one never rewrites
+memberships already sold — the name, price and duration are copied onto each
+sale.
+
+**Selling** happens on the member's page. Only `planId` is required; leaving the
+start date blank lets the server begin today, or the day after an existing
+membership ends so a renewal loses no time. Price can be overridden for one
+sale, a discount comes off it, and collecting less than the full amount leaves a
+`PARTIAL` balance that the desk can top up later. An explicit start date that
+overlaps is refused with a `409` naming the date to use instead — the portal
+shows that message and offers a one-click **Start on <date> instead**.
+
+**Renewals** ([src/routes/RenewalsPage.tsx](src/routes/RenewalsPage.tsx)) is the
+follow-up call list: who runs out soonest, their phone number, and anything they
+still owe. It reads `GET /subscriptions/expiring`, which returns a nested
+`member` object — undocumented in the brief, but what makes that route usable as
+a call list on its own.
+
+Money is cash-in-hand: there is no payment gateway, and the UI says so.
 
 ## Known API limitations
 
-Found while building this, all verified against the deployed backend. Each one
-is a backend change, not something the portal can fix.
+Found while building, all verified against the deployed backend.
 
-**`PATCH /members/:id` cannot clear four fields.** `null` is the only value the
-API accepts for removing a field (`""` is rejected on validated fields), and it
-works for `heightCm`, `weightKg`, `goal`, `activityLevel`, `medicalNotes`,
-`notes` and `emergencyContactName`. For the rest:
+**Archiving a plan clears `isPublic`, and restoring does not put it back.** A
+restored plan is sellable at the desk again but silently invisible in the member
+app until someone re-ticks it. The restore dialog says so, since nothing in the
+UI would otherwise reveal it.
 
-| Field                   | Sending `null`                              |
-| ----------------------- | ------------------------------------------- |
-| `email`                 | `500 Internal server error`                 |
-| `gender`                | `500 Internal server error`                 |
-| `emergencyContactPhone` | `500 Internal server error`                 |
-| `dateOfBirth`           | `200`, but stores `1970-01-01` — data loss   |
+**`GET /plans` returns archived plans to staff** with no query parameter to
+change that, so the Plans screen splits them into an "Archived" section itself.
+The sell dialog offers only plans that are `isActive` and not archived.
 
-The edit form therefore refuses to clear these four and explains why, instead of
-silently dropping the edit or corrupting the date. See `UNCLEARABLE_FIELDS` in
-[src/members/form.ts](src/members/form.ts) — delete an entry once the backend is
-fixed and clearing that field starts working immediately.
+**`POST /subscriptions/:id/payment` rejects `notes`** — it takes `amount` and
+`paymentMethod` only, so a part payment can't carry its own note. The note
+captured at the point of sale is the only one a membership has.
 
-**`fullName` can be `null`.** The API docs type it as always present, but app
-signups who never finished onboarding really do come back with
-`fullName: null`. Everything renders it through `memberName()` in
+**A queued renewal is not an overlap.** Selling a second plan without a start
+date succeeds and queues it from the day after the current one ends; only an
+explicit overlapping `startDate` is refused with a `409`.
+
+### Fixed upstream on 2026-08-14
+
+`PATCH /members/:id` used to `500` on `email`, `gender` and
+`emergencyContactPhone` sent as `null`, and stored `1970-01-01` for a null
+`dateOfBirth`. All four now clear correctly, so the `UNCLEARABLE_FIELDS`
+workaround this portal carried has been **removed** — clearing a field sends
+`null` for everything. Note that `gender: null` resets to `UNDISCLOSED` rather
+than to an empty value, because the column is not nullable.
+
+`fullName` really can be `null` — app signups who never finished onboarding come
+back that way. Everything renders it through `memberName()` in
 [src/lib/format.ts](src/lib/format.ts), which falls back to "Unnamed member".
 
-**Things that don't exist yet**, so the portal doesn't pretend they do: no
-membership plans (nothing about what a member paid for, or when they expire), no
-dashboard statistics endpoint, no way to add a trainer or a second admin, and no
-check-ins, classes or payments.
+**Things that still don't exist**, so the portal doesn't pretend they do: no
+payment gateway (cash recorded by hand), no dashboard statistics endpoint, no way
+to add a trainer or a second admin, and no check-ins or classes.

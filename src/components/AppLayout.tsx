@@ -5,6 +5,12 @@ import { useAuth } from '../auth/AuthProvider';
 import { ROLE_LABELS } from '../api/types';
 import { Button } from './Button';
 
+const NAV = [
+  { to: '/members', label: 'Members' },
+  { to: '/renewals', label: 'Renewals' },
+  { to: '/plans', label: 'Plans' },
+];
+
 export function AppLayout() {
   const { user, gym, signOut } = useAuth();
 
@@ -30,20 +36,23 @@ export function AppLayout() {
           )}
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold text-slate-900">{gymName}</p>
-            <p className="text-xs text-slate-500">Member management</p>
+            <p className="text-xs text-slate-500">Members &amp; memberships</p>
           </div>
 
           <nav className="flex items-center gap-1">
-            <NavLink
-              to="/members"
-              className={({ isActive }) =>
-                `rounded-md px-3 py-1.5 text-sm font-medium ${
-                  isActive ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-100'
-                }`
-              }
-            >
-              Members
-            </NavLink>
+            {NAV.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) =>
+                  `rounded-md px-3 py-1.5 text-sm font-medium ${
+                    isActive ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-100'
+                  }`
+                }
+              >
+                {item.label}
+              </NavLink>
+            ))}
           </nav>
 
           <div className="ml-2 flex items-center gap-3 border-l border-slate-200 pl-4">

@@ -86,8 +86,9 @@ Unwrap `data` in your API client so components never see the envelope. Surface
 staff. When `errors` is present it is an array of per-field validation strings.
 
 > **Validation is strict.** The API rejects unknown fields with a `400`. Send
-> only the fields documented below — no extra keys, and omit optional fields
-> entirely rather than sending `null` or `""`.
+> only the fields documented below — no extra keys. On `POST`, omit optional
+> fields rather than sending `null`. On `PATCH`, `null` is meaningful: it clears
+> the field. See the PATCH semantics table in section 5.
 
 ---
 
@@ -262,6 +263,41 @@ Returned by every member endpoint:
 }
 ```
 
+**Nullability — every one of these can come back `null`**, including
+`fullName`. App signups routinely have no name at all. Type it as:
+
+```ts
+interface Member {
+  id: string;
+  userId: string;
+  memberCode: string | null;
+  fullName: string | null;          // yes, really
+  phone: string;                    // never null
+  email: string | null;
+  gender: Gender;                   // never null; UNDISCLOSED is "not set"
+  dateOfBirth: string | null;       // ISO datetime
+  heightCm: number | null;
+  weightKg: number | null;
+  goal: FitnessGoal | null;
+  activityLevel: ActivityLevel | null;
+  medicalNotes: string | null;
+  notes: string | null;
+  emergencyContactName: string | null;
+  emergencyContactPhone: string | null;
+  status: GymUserStatus;            // never null
+  source: MemberSource;             // never null
+  hasAppAccount: boolean;
+  onboarded: boolean;
+  joinedAt: string;                 // ISO datetime
+  lastVisitAt: string | null;
+}
+```
+
+Only `id`, `userId`, `phone`, `gender`, `status`, `source`, `hasAppAccount`,
+`onboarded` and `joinedAt` are guaranteed non-null. Render a fallback for the
+rest — a member with no name should show their member code or phone, never
+crash and never show "undefined".
+
 Notes on three fields that aren't obvious:
 
 - **`id` is the membership id**, not the person's id. It's what every
@@ -354,7 +390,28 @@ Returns one member object. `404` if it isn't a member of this gym.
 ### `PATCH /members/:id`
 
 Same fields as create **except `phone`**, all optional. The phone number is the
-login identity and cannot be changed here. Send only changed fields.
+login identity and cannot be changed here.
+
+**PATCH semantics — this is the contract:**
+
+| You send            | Result                                    |
+| ------------------- | ----------------------------------------- |
+| field omitted       | left exactly as it was                     |
+| `"field": null`     | **cleared**                                |
+| `"field": value`    | set to that value, after validation        |
+| `"field": ""`       | `400` on validated fields — use `null`     |
+
+**Every** optional field can be cleared with `null`, including `email`,
+`gender`, `dateOfBirth`, `emergencyContactPhone` and `fullName`. There are no
+exceptions and no "unclearable" fields.
+
+One special case: `gender` is not nullable in the database, so sending `null`
+**resets it to `UNDISCLOSED`** rather than to an empty value. The response
+confirms `"gender": "UNDISCLOSED"`. Everything else comes back as literal
+`null`.
+
+Validation still applies to real values — `""` fails `IsEmail`, `"BANANA"`
+fails the gender enum. Only `null` means "clear".
 
 ### `POST /members/:id/deactivate`
 
@@ -376,6 +433,133 @@ active.
 
 ---
 
+## 5b. Plans and memberships
+
+Added 2026-08-14. **There is no payment gateway and there will not be one for
+now** — the desk takes cash and records what came in.
+
+### Plans — what the gym sells
+
+`GET /plans` is open to members too (they see only active, public plans);
+everything else is staff-only.
+
+```
+GET   /plans                     list
+POST  /plans                     create
+GET   /plans/:id                 one, with timesSold
+PATCH /plans/:id                 edit
+POST  /plans/:id/archive         take off sale, keep history
+POST  /plans/:id/restore         put back on sale
+```
+
+A plan:
+
+```json
+{
+  "id": "…", "name": "3 Months", "description": null,
+  "durationValue": 3, "durationUnit": "MONTH", "durationLabel": "3 months",
+  "price": 4500, "isActive": true, "isPublic": true,
+  "sortOrder": 2, "archivedAt": null, "timesSold": 7
+}
+```
+
+`isActive` means sellable at the desk; `isPublic` means also visible in the
+member app. `timesSold` appears only for staff. Plans are **archived, never
+deleted**, and editing one never changes memberships already sold — name, price
+and duration are copied onto the subscription at the point of sale.
+
+### Memberships — selling a plan
+
+```
+POST /members/:memberId/subscriptions    sell a plan
+GET  /members/:memberId/subscriptions    their history, newest first
+GET  /subscriptions/expiring?days=7      the follow-up call list
+POST /subscriptions/:id/payment          record more cash
+POST /subscriptions/:id/cancel           cancel
+```
+
+Selling takes only `planId`; everything else is optional:
+
+```json
+{
+  "planId": "…",
+  "startDate": "2026-08-15",
+  "price": 4500,
+  "discount": 500,
+  "amountPaid": 2000,
+  "paymentMethod": "CASH",
+  "notes": "Rest on the 20th"
+}
+```
+
+- **Leave `startDate` out.** It defaults to today, or — if they are renewing
+  before their current membership runs out — **the day after it ends**, so the
+  member loses no time and the terms don't overlap.
+- `price` overrides the plan's list price for this sale only. `discount` comes
+  off it. `amountPaid` defaults to the full amount due; anything less is a
+  `PARTIAL` payment with a balance owing.
+- A sale that **overlaps an existing membership is refused with `409`**, and the
+  message names the date to start it instead. Cancel the old one to replace it.
+
+A subscription:
+
+```json
+{
+  "id": "…", "memberId": "…", "planId": "…",
+  "planName": "3 Months", "durationLabel": "3 months",
+  "status": "ACTIVE",
+  "startDate": "2026-08-14T00:00:00.000Z",
+  "endDate": "2026-11-13T00:00:00.000Z",
+  "daysRemaining": 91,
+  "price": 4500, "discount": 500,
+  "amountDue": 4000, "amountPaid": 4000, "balance": 0,
+  "paymentMethod": "CASH", "paymentStatus": "PAID",
+  "notes": null, "cancelledAt": null, "cancelReason": null
+}
+```
+
+`status` is `ACTIVE | UPCOMING | EXPIRED | CANCELLED`, **computed from the dates
+on every read** — there is no stored status to go stale, and no nightly job.
+`daysRemaining` is 0 on the last valid day and negative once past.
+
+### Every member now carries their membership
+
+`GET /members` and `GET /members/:id` include:
+
+```json
+"membership": {
+  "status": "ACTIVE",
+  "subscriptionId": "…",
+  "planName": "3 Months",
+  "startDate": "…", "endDate": "…",
+  "daysRemaining": 91,
+  "balance": 0,
+  "coveredUntil": "2026-12-13T00:00:00.000Z",
+  "hasRenewalQueued": true
+}
+```
+
+`null` when they have never bought anything — that's your "app signup / lead"
+population. When a renewal is already queued, `status` and `endDate` describe
+the membership they are on **today**, while `coveredUntil` is the last day
+covered once the renewal is counted.
+
+New list filters:
+
+| Param              | Values                                    |
+| ------------------ | ----------------------------------------- |
+| `membershipStatus` | `ACTIVE`, `EXPIRING`, `EXPIRED`, `NONE`   |
+| `expiringInDays`   | window for `EXPIRING`, default 7, max 90  |
+
+`NONE` is the cleanest way to separate leads from paying members — better than
+filtering on `source`.
+
+### For the member app
+
+`GET /users/me` now returns a `subscription` field with the same shape as
+`membership` above, or `null`. That's the app home screen: plan name, days left,
+expiry date.
+
 ## 6. Enums
 
 Use these exact strings. Add human labels in the UI.
@@ -387,6 +571,11 @@ type ActivityLevel = 'BEGINNER' | 'OCCASIONAL' | 'REGULAR';
 type GymUserStatus = 'ACTIVE' | 'SUSPENDED' | 'LEFT';
 type MemberSource = 'APP_SIGNUP' | 'FRONT_DESK' | 'IMPORT';
 type GymRole = 'MEMBER' | 'TRAINER' | 'GYM_ADMIN' | 'OWNER';
+
+type DurationUnit = 'DAY' | 'MONTH';
+type PaymentMethod = 'CASH' | 'UPI' | 'CARD' | 'BANK_TRANSFER' | 'ONLINE' | 'OTHER';
+type PaymentStatus = 'PAID' | 'PARTIAL' | 'PENDING';
+type SubscriptionStatus = 'ACTIVE' | 'UPCOMING' | 'EXPIRED' | 'CANCELLED';
 ```
 
 ---
@@ -399,29 +588,43 @@ Read these before designing screens. They are real, current, and will bite.
    app is auto-linked to the gym as a `MEMBER` with `source: "APP_SIGNUP"` and
    `memberCode: null` — even if they've never paid or visited. They appear in
    `GET /members` alongside real registered members.
-   **Handle it:** default the main list to `source=FRONT_DESK`, and put app
-   signups behind a separate tab or filter (call them "App signups" or "Leads").
-   Don't show a blank member-code column and hope nobody notices.
+   **Handle it:** filter the main list with `membershipStatus` (see section 5b)
+   and put the rest behind a "Leads" tab. `membershipStatus=NONE` is a cleaner
+   split than `source`, because it separates people who have actually bought
+   something from those who have not.
 
-2. **There are no membership plans yet.** You cannot show what a member paid
-   for, when they expire, or whether they're active-paid. Don't design a
-   dashboard around revenue or expiry — the data does not exist. This is the
-   next backend feature.
+2. ~~**There are no membership plans yet.**~~ **Built** — see section 5b. Plans,
+   selling, renewals, part payments and the expiring list all exist now. Money
+   is manual cash only; there is no payment gateway.
 
 3. **There is no endpoint to add a trainer or a second admin.** Only the gym
    owner is created, at gym onboarding. Don't build a staff-management screen;
    it has nothing to call.
 
 4. **No dashboard statistics endpoint exists.** If you want a landing page, base
-   it on `GET /members` counts (e.g. call it with `limit=1` per status and read
-   `total`). Don't invent `/dashboard/stats`.
+   it on `GET /members` counts (call it with `limit=1` per `membershipStatus`
+   and read `total`) plus `GET /subscriptions/expiring`. Don't invent
+   `/dashboard/stats`.
 
-5. **No check-in, classes, trainers or payments.** None of it exists yet.
+5. **No check-in, classes or trainers.** None of it exists yet. Payments are
+   recorded by hand against a membership — no gateway, and none planned for now.
 
 6. **The 60-second OTP cooldown** described in section 3. The single most likely
    thing to make the portal feel broken.
 
 7. **Free-tier cold starts** of 30–60 seconds on the first request.
+
+### Fixed on 2026-08-14 — remove any workarounds
+
+`PATCH` used to `500` on `email`, `gender` and `emergencyContactPhone` sent as
+`null`, and silently store `1970-01-01` for a null `dateOfBirth`. Root cause:
+class-validator's `@IsOptional()` also skips validation for `null`, so nulls
+reached transforms like `value.toLowerCase()` that assumed a string.
+
+All four now clear correctly, as does `fullName` (which had the same latent
+bug), and the identical bug in `PATCH /users/me` is fixed too. **If the portal
+carries an `UNCLEARABLE_FIELDS` list or similar workaround, delete it** — once
+the backend is redeployed, clearing works for every field.
 
 ---
 

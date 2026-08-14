@@ -56,3 +56,22 @@ export function initials(fullName: string | null): string {
     .map((part) => part[0]?.toUpperCase() ?? '')
     .join('');
 }
+
+const MONEY = new Intl.NumberFormat('en-IN', {
+  style: 'currency',
+  currency: 'INR',
+  maximumFractionDigits: 2,
+});
+
+/** `4500` → `₹4,500`. Paise are shown only when there are any. */
+export function formatMoney(amount: number | null | undefined): string {
+  if (amount === null || amount === undefined || Number.isNaN(amount)) return '—';
+  return MONEY.format(amount).replace(/\.00$/, '');
+}
+
+/** "5 days", "1 day", "today" — for a countdown that reads naturally. */
+export function formatDayCount(days: number): string {
+  const n = Math.abs(days);
+  if (days === 0) return 'today';
+  return `${n} ${n === 1 ? 'day' : 'days'}`;
+}

@@ -18,6 +18,11 @@ export type GymUserStatus = 'ACTIVE' | 'SUSPENDED' | 'LEFT';
 export type MemberSource = 'APP_SIGNUP' | 'FRONT_DESK' | 'IMPORT';
 export type GymRole = 'MEMBER' | 'TRAINER' | 'GYM_ADMIN' | 'OWNER';
 
+export type DurationUnit = 'DAY' | 'MONTH';
+export type PaymentMethod = 'CASH' | 'UPI' | 'CARD' | 'BANK_TRANSFER' | 'ONLINE' | 'OTHER';
+export type PaymentStatus = 'PAID' | 'PARTIAL' | 'PENDING';
+export type SubscriptionStatus = 'ACTIVE' | 'UPCOMING' | 'EXPIRED' | 'CANCELLED';
+
 /** Roles allowed to use this portal. Anything else gets 403 on every call. */
 export const STAFF_ROLES: readonly GymRole[] = ['GYM_ADMIN', 'OWNER'];
 
@@ -52,6 +57,28 @@ export const SOURCE_LABELS: Record<MemberSource, string> = {
   FRONT_DESK: 'Front desk',
   APP_SIGNUP: 'App signup',
   IMPORT: 'Import',
+};
+
+export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  CASH: 'Cash',
+  UPI: 'UPI',
+  CARD: 'Card',
+  BANK_TRANSFER: 'Bank transfer',
+  ONLINE: 'Online',
+  OTHER: 'Other',
+};
+
+export const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
+  PAID: 'Paid',
+  PARTIAL: 'Part paid',
+  PENDING: 'Unpaid',
+};
+
+export const SUBSCRIPTION_STATUS_LABELS: Record<SubscriptionStatus, string> = {
+  ACTIVE: 'Active',
+  UPCOMING: 'Upcoming',
+  EXPIRED: 'Expired',
+  CANCELLED: 'Cancelled',
 };
 
 export const ROLE_LABELS: Record<GymRole, string> = {
@@ -127,15 +154,12 @@ export interface Member {
   userId: string;
   /** null for app signups that were never registered at the desk. */
   memberCode: string | null;
-  /**
-   * The brief documents this as always present, but app signups who haven't
-   * finished onboarding really do come back as null — verified against the
-   * deployed API. Render it through `memberName()`, never directly.
-   */
+  /** App signups routinely have no name. Render via `memberName()`, never directly. */
   fullName: string | null;
   phone: string;
   email: string | null;
-  gender: Gender | null;
+  /** Never null — `UNDISCLOSED` is how "not set" is represented. */
+  gender: Gender;
   dateOfBirth: string | null;
   heightCm: number | null;
   weightKg: number | null;
@@ -152,15 +176,23 @@ export interface Member {
   onboarded: boolean;
   joinedAt: string;
   lastVisitAt: string | null;
+  /** What they've bought. `null` means they never have — a lead. */
+  membership: MemberMembership | null;
 }
 
 export type MemberSortBy = 'joinedAt' | 'fullName' | 'lastVisitAt';
 export type SortOrder = 'asc' | 'desc';
 
+/** Filters the list by what the member has actually bought. */
+export type MembershipFilter = 'ACTIVE' | 'EXPIRING' | 'EXPIRED' | 'NONE';
+
 export interface MemberListParams {
   search?: string;
   status?: GymUserStatus;
   source?: MemberSource;
+  membershipStatus?: MembershipFilter;
+  /** Window for `EXPIRING`. Default 7, max 90. */
+  expiringInDays?: number;
   page?: number;
   /** Max 100. */
   limit?: number;
@@ -201,4 +233,128 @@ export interface DeactivateMemberInput {
   /** LEFT = quit, SUSPENDED = temporary block. Defaults to LEFT. */
   status?: Extract<GymUserStatus, 'LEFT' | 'SUSPENDED'>;
   reason?: string;
+}
+
+// ------------------------------------------------- plans & memberships (§5b)
+
+/** What the gym sells. Plans are archived, never deleted. */
+export interface Plan {
+  id: string;
+  name: string;
+  description: string | null;
+  durationValue: number;
+  durationUnit: DurationUnit;
+  /** Server-rendered, e.g. "3 months". */
+  durationLabel: string;
+  price: number;
+  /** Sellable at the desk. */
+  isActive: boolean;
+  /** Also visible in the member app. */
+  isPublic: boolean;
+  sortOrder: number;
+  archivedAt: string | null;
+  /** Staff-only, and only returned by `GET /plans/:id`. */
+  timesSold?: number;
+}
+
+export interface CreatePlanInput {
+  name: string;
+  description?: string;
+  /** Integer 1–120. */
+  durationValue: number;
+  durationUnit: DurationUnit;
+  /** 0–10,000,000. */
+  price: number;
+  isActive?: boolean;
+  isPublic?: boolean;
+  sortOrder?: number;
+}
+
+export type UpdatePlanInput = Partial<CreatePlanInput>;
+
+/**
+ * A plan sold to a member. Name, price and duration are copied at the point of
+ * sale, so editing the plan later never rewrites history. `status` is computed
+ * from the dates on every read — there is no stored status to go stale.
+ */
+/** Who the membership belongs to. Present on `GET /subscriptions/expiring`. */
+export interface SubscriptionMember {
+  id: string;
+  memberCode: string | null;
+  fullName: string | null;
+  phone: string;
+}
+
+export interface Subscription {
+  id: string;
+  memberId: string;
+  planId: string;
+  planName: string;
+  durationLabel: string;
+  status: SubscriptionStatus;
+  startDate: string;
+  endDate: string;
+  /** 0 on the last valid day, negative once past. */
+  daysRemaining: number;
+  price: number;
+  discount: number;
+  amountDue: number;
+  amountPaid: number;
+  balance: number;
+  paymentMethod: PaymentMethod | null;
+  paymentStatus: PaymentStatus;
+  notes: string | null;
+  cancelledAt: string | null;
+  cancelReason: string | null;
+  createdAt?: string;
+  /**
+   * Only returned by `GET /subscriptions/expiring` — undocumented in the brief
+   * but present, and what makes that route usable as a call list on its own.
+   */
+  member?: SubscriptionMember;
+}
+
+/** POST /members/:memberId/subscriptions — only `planId` is required. */
+export interface CreateSubscriptionInput {
+  planId: string;
+  /**
+   * ISO date. Omit it: the server defaults to today, or to the day after an
+   * existing membership ends so a renewal loses no time. An explicit date that
+   * overlaps is refused with a 409 naming the date to use instead.
+   */
+  startDate?: string;
+  /** Overrides the plan's list price for this sale only. */
+  price?: number;
+  discount?: number;
+  /** Defaults to the full amount due; less means PARTIAL with a balance owing. */
+  amountPaid?: number;
+  paymentMethod?: PaymentMethod;
+  notes?: string;
+}
+
+/** POST /subscriptions/:id/payment. `notes` is rejected here — amount and method only. */
+export interface RecordPaymentInput {
+  amount: number;
+  paymentMethod?: PaymentMethod;
+}
+
+export interface CancelSubscriptionInput {
+  reason?: string;
+}
+
+/**
+ * The membership summary now carried by every member object. `null` when they
+ * have never bought anything — that is the "lead" population.
+ */
+export interface MemberMembership {
+  status: SubscriptionStatus;
+  subscriptionId: string;
+  planName: string;
+  startDate: string;
+  endDate: string;
+  daysRemaining: number;
+  balance: number;
+  /** Last day covered once a queued renewal is counted. */
+  coveredUntil: string;
+  hasRenewalQueued: boolean;
 }
