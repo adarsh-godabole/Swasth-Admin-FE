@@ -163,10 +163,16 @@ assembled from routes that exist — see
 
 | Panel | Built from |
 | --- | --- |
-| Headline counts | `GET /members?limit=1&membershipStatus=…`, reading `total` |
+| Headline counts | `GET /members/stats` — one request, a true partition |
 | Attendance | `GET /check-ins?date=…`, one request per day in the window |
 | Renewals due | `GET /subscriptions/expiring?days=…`, bucketed by urgency |
 | Plan sales | `GET /plans/:id`, which carries `timesSold` |
+
+A single **Look ahead** control scopes both the expiring bucket and the renewals
+list, so the two never disagree, and each segment of the membership bar drills
+through to the list filter that reproduces it exactly (`active` →
+`ACTIVE_NOT_EXPIRING`, and so on) — click a segment and the count on the next
+screen matches the one you clicked.
 
 Charts are hand-rolled SVG — no charting dependency. Every series is either a
 single hue or an **ordinal ramp**, because each scale here is ordered
@@ -198,12 +204,6 @@ The sell dialog offers only plans that are `isActive` and not archived.
 `paymentMethod` only, so a part payment can't carry its own note. The note
 captured at the point of sale is the only one a membership has.
 
-**`membershipStatus=EXPIRING` is a SUBSET of `ACTIVE`, not a sibling bucket.**
-Verified by selling a same-day plan: `ACTIVE` went 4→5 and `EXPIRING` 0→1 for the
-same person. The four counts therefore must never simply be summed — the
-part-to-whole breakdown carves expiring back out of active, and the population
-total comes from a separate unfiltered call.
-
 **`GET /check-ins?date=` returns a 500 on an unparseable date** rather than a
 400, so the portal only ever sends `YYYY-MM-DD` from a date input.
 
@@ -219,6 +219,26 @@ fields the way every other write does, so the portal sends none.
 **A queued renewal is not an overlap.** Selling a second plan without a start
 date succeeds and queues it from the day after the current one ends; only an
 explicit overlapping `startDate` is refused with a `409`.
+
+### Counting members: use `GET /members/stats`
+
+`membershipStatus=EXPIRING` is a **subset** of `ACTIVE`, not a sibling of it —
+someone whose membership ends tomorrow is still active today, so both filters
+count them. Summing the filters therefore double-counts every expiring member.
+
+This portal originally derived its dashboard counts that way, on the brief's
+earlier guidance, and the bug was real: with 27 members and 1 expiring, the
+part-to-whole bar totalled 28. The backend now ships `GET /members/stats`, whose
+`buckets` are a true partition, and the Insights page uses it — one request
+instead of five, and nothing to keep in sync by hand.
+
+Two things to keep straight when reading that response:
+
+- `activeTotal` **includes** `expiringSoon` (it equals `buckets.active +
+  buckets.expiringSoon`). It is the headline "active members" figure; never add
+  the two together.
+- `buckets.active` is the disjoint slice — the one that pairs with the
+  `ACTIVE_NOT_EXPIRING` list filter.
 
 ### Fixed upstream on 2026-08-14
 

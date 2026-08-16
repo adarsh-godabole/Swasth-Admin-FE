@@ -55,12 +55,25 @@ const TABS: { id: Tab; label: string; blurb: string }[] = [
   { id: 'ALL', label: 'Everyone', blurb: 'Every person linked to this gym.' },
 ];
 
+/**
+ * Not in the tab bar by default — it is where the Insights membership chart
+ * drills into, and it only appears once selected. `ACTIVE_NOT_EXPIRING` is the
+ * slice of ACTIVE that excludes anyone already inside the expiring window, so
+ * the count matches the chart segment exactly.
+ */
+const DRILLDOWN_TAB = {
+  id: 'ACTIVE_NOT_EXPIRING' as const,
+  label: 'Active, not expiring',
+  blurb: 'Paid up with time left, excluding anyone already inside the expiring window.',
+};
+
 /** Windows offered for the Expiring tab. The API caps `expiringInDays` at 90. */
 const EXPIRING_WINDOWS = [7, 15, 30, 60, 90];
 
 /** Reads naturally after a number: "2 active members", "22 leads", "1 person". */
 const COUNT_NOUN: Record<Tab, [singular: string, plural: string]> = {
   ACTIVE: ['active member', 'active members'],
+  ACTIVE_NOT_EXPIRING: ['active member', 'active members'],
   EXPIRING: ['expiring member', 'expiring members'],
   EXPIRED: ['expired member', 'expired members'],
   NONE: ['lead', 'leads'],
@@ -69,6 +82,7 @@ const COUNT_NOUN: Record<Tab, [singular: string, plural: string]> = {
 
 const EMPTY_TITLES: Record<Tab, string> = {
   ACTIVE: 'Nobody has an active membership',
+  ACTIVE_NOT_EXPIRING: 'Nobody is active outside the expiring window',
   EXPIRING: 'Nothing expiring in this window',
   EXPIRED: 'No expired memberships',
   NONE: 'No leads',
@@ -77,6 +91,7 @@ const EMPTY_TITLES: Record<Tab, string> = {
 
 const EMPTY_DESCRIPTIONS: Record<Tab, string> = {
   ACTIVE: 'Sell a plan from a member\u2019s page and they\u2019ll appear here.',
+  ACTIVE_NOT_EXPIRING: 'Everyone with a live membership is expiring soon.',
   EXPIRING: 'Try a longer window, or check the Active tab.',
   EXPIRED: 'Good news \u2014 nobody has lapsed.',
   NONE: 'Everyone linked to this gym has bought a plan.',
@@ -152,14 +167,15 @@ export function MembersPage() {
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
     ...(status ? { status } : {}),
     ...(tab === 'ALL' ? {} : { membershipStatus: tab }),
-    ...(tab === 'EXPIRING' ? { expiringInDays } : {}),
+    ...(tab === 'EXPIRING' || tab === 'ACTIVE_NOT_EXPIRING' ? { expiringInDays } : {}),
   };
 
   const list = useMemberList(query);
   const slow = useSlowRequest(list.isLoading);
 
   const data = list.data;
-  const activeTab = TABS.find((entry) => entry.id === tab) ?? TABS[0];
+  const visibleTabs = tab === DRILLDOWN_TAB.id ? [DRILLDOWN_TAB, ...TABS] : TABS;
+  const activeTab = visibleTabs.find((entry) => entry.id === tab) ?? TABS[0];
   const filtered = Boolean(debouncedSearch || status);
 
   function toggleSort(field: MemberSortBy) {
@@ -187,7 +203,7 @@ export function MembersPage() {
 
       <div className="mt-4 rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
         <div className="flex gap-1 border-b border-slate-200 px-2 pt-2" role="tablist">
-          {TABS.map((entry) => (
+          {visibleTabs.map((entry) => (
             <button
               key={entry.id}
               role="tab"

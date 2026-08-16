@@ -189,8 +189,20 @@ export interface Member {
 export type MemberSortBy = 'joinedAt' | 'fullName' | 'lastVisitAt';
 export type SortOrder = 'asc' | 'desc';
 
-/** Filters the list by what the member has actually bought. */
-export type MembershipFilter = 'ACTIVE' | 'EXPIRING' | 'EXPIRED' | 'NONE';
+/**
+ * Filters the list by what the member has actually bought.
+ *
+ * `EXPIRING` is a SUBSET of `ACTIVE` — someone whose membership ends tomorrow is
+ * still active today, so both count them. `ACTIVE_NOT_EXPIRING` is the disjoint
+ * slice: `ACTIVE_NOT_EXPIRING + EXPIRING = ACTIVE`. Never derive totals by
+ * summing these; use `GET /members/stats`.
+ */
+export type MembershipFilter =
+  | 'ACTIVE'
+  | 'EXPIRING'
+  | 'ACTIVE_NOT_EXPIRING'
+  | 'EXPIRED'
+  | 'NONE';
 
 export interface MemberListParams {
   search?: string;
@@ -392,4 +404,33 @@ export interface CheckInDay {
   date: string;
   total: number;
   items: CheckIn[];
+}
+
+/**
+ * `GET /members/stats` — the counts a dashboard needs, computed server-side.
+ * `buckets` is a true partition and always sums to `totalMembers`.
+ */
+export interface MemberStats {
+  totalMembers: number;
+  /** The window `expiringSoon` was computed with. */
+  expiringInDays: number;
+  /** The headline "active members" figure. Includes `expiringSoon`. */
+  activeTotal: number;
+  buckets: {
+    /** Live, and not inside the expiring window. Drill down with ACTIVE_NOT_EXPIRING. */
+    active: number;
+    expiringSoon: number;
+    /** History but nothing live — lapsed and cancelled alike. */
+    expired: number;
+    /** Never bought anything: the app-signup population. */
+    never: number;
+  };
+}
+
+export interface MemberStatsParams {
+  /** Default 7, max 90. */
+  expiringInDays?: number;
+  /** Narrow the population so the numbers match a filtered list. */
+  status?: GymUserStatus;
+  source?: MemberSource;
 }

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { ChartTooltip } from './ChartCard';
 import { MAX_BAR, SURFACE_GAP, VIZ, barPath, columnPath, niceTicks } from './tokens';
 
@@ -200,10 +201,13 @@ export function StackedShareBar({
   points,
   colors,
   total,
+  hrefFor,
 }: {
   points: Point[];
   colors: readonly string[];
   total: number;
+  /** Makes each class drill through to the list that reproduces it. */
+  hrefFor?: (index: number) => string;
 }) {
   const [active, setActive] = useState<number | null>(null);
   const safeTotal = Math.max(1, total);
@@ -221,42 +225,70 @@ export function StackedShareBar({
           const percent = Math.round(share * 100);
           // Only set a label inside a segment when it comfortably fits.
           const fits = share > 0.12;
-          return (
-            <div
-              key={point.key}
-              tabIndex={0}
-              aria-label={`${point.title}: ${point.value} (${percent}%)`}
-              onMouseEnter={() => setActive(index)}
-              onMouseLeave={() => setActive(null)}
-              onFocus={() => setActive(index)}
-              onBlur={() => setActive(null)}
-              className="flex items-center justify-center focus:outline-2 focus:outline-offset-2 focus:outline-indigo-600"
-              style={{
-                width: `${share * 100}%`,
-                backgroundColor: colors[index] ?? VIZ.series,
-                opacity: active === null || active === index ? 1 : 0.6,
-              }}
-            >
-              {fits && (
-                <span className="text-xs font-semibold text-white">{point.value}</span>
-              )}
+          const href = hrefFor?.(index);
+
+          const inner = fits ? (
+            <span className="text-xs font-semibold text-white">{point.value}</span>
+          ) : null;
+
+          const shared = {
+            'aria-label': `${point.title}: ${point.value} (${percent}%)`,
+            onMouseEnter: () => setActive(index),
+            onMouseLeave: () => setActive(null),
+            onFocus: () => setActive(index),
+            onBlur: () => setActive(null),
+            className:
+              'flex items-center justify-center focus:outline-2 focus:outline-offset-2 focus:outline-indigo-600',
+            style: {
+              width: `${share * 100}%`,
+              backgroundColor: colors[index] ?? VIZ.series,
+              opacity: active === null || active === index ? 1 : 0.6,
+            },
+          };
+
+          return href ? (
+            <Link key={point.key} to={href} {...shared}>
+              {inner}
+            </Link>
+          ) : (
+            <div key={point.key} tabIndex={0} {...shared}>
+              {inner}
             </div>
           );
         })}
       </div>
 
       <ul className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5">
-        {points.map((point, index) => (
-          <li key={point.key} className="flex items-center gap-1.5 text-xs">
-            <span
-              aria-hidden="true"
-              className="size-2.5 shrink-0 rounded-sm"
-              style={{ backgroundColor: colors[index] ?? VIZ.series }}
-            />
-            <span className="text-slate-600">{point.title}</span>
-            <span className="font-semibold text-slate-800 tabular-nums">{point.value}</span>
-          </li>
-        ))}
+        {points.map((point, index) => {
+          const href = hrefFor?.(index);
+          const body = (
+            <>
+              <span
+                aria-hidden="true"
+                className="size-2.5 shrink-0 rounded-sm"
+                style={{ backgroundColor: colors[index] ?? VIZ.series }}
+              />
+              <span className="text-slate-600">{point.title}</span>
+              <span className="font-semibold text-slate-800 tabular-nums">{point.value}</span>
+            </>
+          );
+          return (
+            <li key={point.key} className="text-xs">
+              {href ? (
+                <Link
+                  to={href}
+                  className="flex items-center gap-1.5 rounded hover:underline"
+                  onMouseEnter={() => setActive(index)}
+                  onMouseLeave={() => setActive(null)}
+                >
+                  {body}
+                </Link>
+              ) : (
+                <span className="flex items-center gap-1.5">{body}</span>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

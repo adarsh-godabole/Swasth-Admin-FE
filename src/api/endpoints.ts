@@ -10,6 +10,8 @@ import type {
   Gym,
   Member,
   MemberListParams,
+  MemberStats,
+  MemberStatsParams,
   OtpSendResponse,
   OtpVerifyResponse,
   Paginated,
@@ -67,6 +69,15 @@ export const members = {
 
   get(id: string) {
     return request<Member>(`/members/${id}`);
+  },
+
+  /**
+   * Dashboard counts in one request. Always use this for totals — deriving them
+   * by calling the list once per status and adding double-counts every expiring
+   * member, because EXPIRING is a subset of ACTIVE.
+   */
+  stats(params: MemberStatsParams = {}) {
+    return request<MemberStats>('/members/stats', { query: { ...params } });
   },
 
   create(input: CreateMemberInput) {

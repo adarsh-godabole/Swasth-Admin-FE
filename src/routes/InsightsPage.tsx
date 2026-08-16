@@ -9,21 +9,24 @@ import { useSlowRequest } from '../hooks/useSlowRequest';
 import { formatMoney } from '../lib/format';
 import { useGymToday } from '../members/checkInQueries';
 import {
+  BUCKET_FILTERS,
   useAttendanceWindow,
   useExpiringHorizon,
-  useMembershipCounts,
+  useMemberStats,
   usePlanSales,
 } from '../members/insightQueries';
 
 const ATTENDANCE_WINDOWS = [7, 14, 30];
-const RENEWAL_HORIZONS = [30, 60, 90];
+/** One look-ahead window scopes both the expiring bucket and the renewals list. */
+const LOOK_AHEAD = [7, 30, 60, 90];
 
-const MIX_LABELS = {
-  ACTIVE: 'Active',
-  EXPIRING: 'Expiring soon',
-  EXPIRED: 'Expired',
-  NONE: 'Never bought',
-} as const;
+/** In partition order, healthiest first — which is also the ordinal ramp order. */
+const MIX_BUCKETS = [
+  { key: 'active', title: 'Active' },
+  { key: 'expiringSoon', title: 'Expiring soon' },
+  { key: 'expired', title: 'Expired' },
+  { key: 'never', title: 'Never bought' },
+] as const;
 
 /** Bucketed by urgency, so the ramp is ordinal rather than categorical. */
 const RENEWAL_BUCKETS = [
@@ -51,15 +54,17 @@ function longDay(date: string): string {
 export function InsightsPage() {
   const [params, setParams] = useSearchParams();
   const attendanceDays = Number(params.get('days') ?? '14') || 14;
-  const horizon = Number(params.get('horizon') ?? '90') || 90;
+  const horizon = Number(params.get('horizon') ?? '7') || 7;
 
   const today = useGymToday();
-  const mix = useMembershipCounts();
+  const stats = useMemberStats(horizon);
   const attendance = useAttendanceWindow(today, attendanceDays);
   const expiring = useExpiringHorizon(horizon);
   const planSales = usePlanSales();
 
-  const loading = mix.isLoading && attendance.isLoading;
+  const buckets = stats.data?.buckets;
+  const totalMembers = stats.data?.totalMembers ?? 0;
+  const loading = stats.isLoading && attendance.isLoading;
   const slow = useSlowRequest(loading);
 
   const attendancePoints = useMemo<Point[]>(
@@ -81,13 +86,13 @@ export function InsightsPage() {
 
   const mixPoints = useMemo<Point[]>(
     () =>
-      (Object.keys(MIX_LABELS) as (keyof typeof MIX_LABELS)[]).map((key) => ({
-        key,
-        label: MIX_LABELS[key],
-        title: MIX_LABELS[key],
-        value: mix.segments[key] ?? 0,
+      MIX_BUCKETS.map((bucket) => ({
+        key: bucket.key,
+        label: bucket.title,
+        title: bucket.title,
+        value: buckets?.[bucket.key] ?? 0,
       })),
-    [mix.segments],
+    [buckets],
   );
 
   const renewals = expiring.data ?? [];
@@ -102,8 +107,8 @@ export function InsightsPage() {
     [renewals],
   );
   const owed = renewals.reduce((sum, item) => sum + item.balance, 0);
-  const everBought = mix.total - (mix.counts.NONE ?? 0);
-  const payingShare = mix.total === 0 ? 0 : Math.round((everBought / mix.total) * 100);
+  const everBought = totalMembers - (buckets?.never ?? 0);
+  const payingShare = totalMembers === 0 ? 0 : Math.round((everBought / totalMembers) * 100);
 
   const planPoints = useMemo<Point[]>(
     () =>
@@ -120,10 +125,10 @@ export function InsightsPage() {
 
   if (loading) return <LoadingBlock label="Building the numbers…" slow={slow} />;
 
-  if (mix.error) {
+  if (stats.isError) {
     return (
       <div className="rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
-        <ErrorState error={mix.error} onRetry={() => mix.refetch()} retrying={mix.isFetching} />
+        <ErrorState error={stats.error} onRetry={() => stats.refetch()} retrying={stats.isFetching} />
       </div>
     );
   }
@@ -159,7 +164,7 @@ export function InsightsPage() {
             </select>
           </label>
           <label className="flex items-center gap-2 text-sm text-slate-600">
-            Renewals
+            Look ahead
             <select
               value={horizon}
               onChange={(event) => {
@@ -168,7 +173,7 @@ export function InsightsPage() {
               }}
               className="rounded-md bg-white px-2 py-1.5 text-sm ring-1 ring-slate-300 ring-inset focus:ring-2 focus:ring-indigo-600"
             >
-              {RENEWAL_HORIZONS.map((value) => (
+              {LOOK_AHEAD.map((value: number) => (
                 <option key={value} value={value}>
                   Next {value} days
                 </option>
@@ -182,9 +187,12 @@ export function InsightsPage() {
       <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200">
           <p className="text-sm text-slate-500">Active memberships</p>
-          <p className="mt-1 text-5xl font-semibold text-slate-900">{mix.counts.ACTIVE}</p>
+          <p className="mt-1 text-5xl font-semibold text-slate-900">
+            {stats.data?.activeTotal ?? 0}
+          </p>
           <p className="mt-1 text-xs text-slate-500">
-            of {mix.total} {mix.total === 1 ? 'person' : 'people'} linked to this gym
+            of {totalMembers} {totalMembers === 1 ? 'person' : 'people'} linked to this gym ·
+            includes those expiring soon
           </p>
         </div>
         <StatTile
@@ -195,10 +203,10 @@ export function InsightsPage() {
         />
         <StatTile
           label="Expiring soon"
-          value={String(mix.counts.EXPIRING)}
-          hint="Within 7 days"
-          to="/members?tab=EXPIRING"
-          tone={mix.counts.EXPIRING > 0 ? 'amber' : undefined}
+          value={String(buckets?.expiringSoon ?? 0)}
+          hint={`Within ${horizon} days`}
+          to={`/members?tab=EXPIRING&days=${horizon}`}
+          tone={(buckets?.expiringSoon ?? 0) > 0 ? 'amber' : undefined}
         />
         <StatTile
           label="Outstanding balances"
@@ -234,8 +242,8 @@ export function InsightsPage() {
 
         <ChartCard
           title="Membership mix"
-          subtitle="Everyone linked to this gym, by what they've bought. Anyone expiring soon is counted once, under Expiring soon."
-          stale={mix.isFetching && !mix.isLoading}
+          subtitle={`Everyone linked to this gym, by what they've bought. Expiring soon means within ${horizon} days.`}
+          stale={stats.isFetching && !stats.isLoading}
           columns={[{ label: 'State' }, { label: 'People', align: 'right' }]}
           rows={mixPoints.map((point) => [point.title, point.value])}
           footer={
@@ -248,7 +256,14 @@ export function InsightsPage() {
             </p>
           }
         >
-          <StackedShareBar points={mixPoints} colors={VIZ.ordinal4} total={mix.total} />
+          <StackedShareBar
+            points={mixPoints}
+            colors={VIZ.ordinal4}
+            total={totalMembers}
+            hrefFor={(index) =>
+              `/members?tab=${BUCKET_FILTERS[MIX_BUCKETS[index].key]}&days=${horizon}`
+            }
+          />
         </ChartCard>
 
         <ChartCard

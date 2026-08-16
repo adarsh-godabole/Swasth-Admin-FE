@@ -546,13 +546,58 @@ covered once the renewal is counted.
 
 New list filters:
 
-| Param              | Values                                    |
-| ------------------ | ----------------------------------------- |
-| `membershipStatus` | `ACTIVE`, `EXPIRING`, `EXPIRED`, `NONE`   |
-| `expiringInDays`   | window for `EXPIRING`, default 7, max 90  |
+| Param              | Values                                                              |
+| ------------------ | ------------------------------------------------------------------- |
+| `membershipStatus` | `ACTIVE`, `EXPIRING`, `ACTIVE_NOT_EXPIRING`, `EXPIRED`, `NONE`       |
+| `expiringInDays`   | window for `EXPIRING` / `ACTIVE_NOT_EXPIRING`, default 7, max 90     |
+
+> ### These filters do NOT sum to the member count
+>
+> **`EXPIRING` is a subset of `ACTIVE`, not a sibling of it.** Someone whose
+> membership ends tomorrow is still active today, so they are counted by both.
+> Adding the four totals double-counts every expiring member — with 27 members
+> and 1 expiring, the sum comes to 28.
+>
+> **For any total, chart or KPI, call `GET /members/stats`** (below). Never
+> derive counts by calling the list once per status and adding the results.
+>
+> For a clickable chart segment, `ACTIVE_NOT_EXPIRING` is the disjoint slice:
+> `ACTIVE_NOT_EXPIRING + EXPIRING = ACTIVE`.
 
 `NONE` is the cleanest way to separate leads from paying members — better than
 filtering on `source`.
+
+### `GET /members/stats` — dashboard counts
+
+Query params: `expiringInDays` (default 7), and optionally `status` / `source`
+to narrow the population so the numbers match a filtered list.
+
+```json
+{
+  "totalMembers": 27,
+  "expiringInDays": 7,
+  "activeTotal": 5,
+  "buckets": {
+    "active": 4,
+    "expiringSoon": 1,
+    "expired": 3,
+    "never": 19
+  }
+}
+```
+
+- **`buckets` is a true partition** — the four always sum to `totalMembers`.
+  Use it for part-to-whole charts.
+- **`activeTotal`** is the "active members" headline figure and **includes**
+  `expiringSoon`. It equals `buckets.active + buckets.expiringSoon`. Never add
+  it to `expiringSoon`.
+- `expired` covers anyone with history but nothing live — lapsed **and**
+  cancelled.
+- `never` is the app-signup population.
+
+Each bucket maps to a list filter for drill-down: `active` →
+`ACTIVE_NOT_EXPIRING`, `expiringSoon` → `EXPIRING`, `expired` → `EXPIRED`,
+`never` → `NONE`.
 
 ### For the member app
 
@@ -652,10 +697,11 @@ Read these before designing screens. They are real, current, and will bite.
    owner is created, at gym onboarding. Don't build a staff-management screen;
    it has nothing to call.
 
-4. **No dashboard statistics endpoint exists.** If you want a landing page, base
-   it on `GET /members` counts (call it with `limit=1` per `membershipStatus`
-   and read `total`) plus `GET /subscriptions/expiring`. Don't invent
-   `/dashboard/stats`.
+4. ~~**No dashboard statistics endpoint exists.**~~ **`GET /members/stats` now
+   exists** — see section 5b. Earlier guidance here said to derive counts by
+   calling the list once per `membershipStatus` and adding the totals. **That
+   was wrong** and double-counted expiring members, because `EXPIRING` is a
+   subset of `ACTIVE`. Use the stats endpoint.
 
 5. **No classes or trainers.** Still nothing. Check-in now exists (section 5c),
    but there is no check-*out*, so no live occupancy. Payments are recorded by
