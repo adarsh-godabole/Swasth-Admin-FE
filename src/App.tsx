@@ -6,6 +6,8 @@ import { MembersPage } from './routes/MembersPage';
 import { MemberDetailPage } from './routes/MemberDetailPage';
 import { RegisterMemberPage } from './routes/RegisterMemberPage';
 import { NotStaffPage } from './routes/NotStaffPage';
+import { CheckInsPage } from './routes/CheckInsPage';
+import { InsightsPage } from './routes/InsightsPage';
 import { PlansPage } from './routes/PlansPage';
 import { RenewalsPage } from './routes/RenewalsPage';
 
@@ -36,6 +38,8 @@ export function App() {
         <Route path="/members" element={<MembersPage />} />
         <Route path="/members/new" element={<RegisterMemberPage />} />
         <Route path="/members/:id" element={<MemberDetailPage />} />
+        <Route path="/check-ins" element={<CheckInsPage />} />
+        <Route path="/insights" element={<InsightsPage />} />
         <Route path="/plans" element={<PlansPage />} />
         <Route path="/renewals" element={<RenewalsPage />} />
       </Route>

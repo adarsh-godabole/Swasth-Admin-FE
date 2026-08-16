@@ -6,9 +6,11 @@ import { ROLE_LABELS } from '../api/types';
 import { Button } from './Button';
 
 const NAV = [
+  { to: '/check-ins', label: 'Check-ins' },
   { to: '/members', label: 'Members' },
   { to: '/renewals', label: 'Renewals' },
   { to: '/plans', label: 'Plans' },
+  { to: '/insights', label: 'Insights' },
 ];
 
 export function AppLayout() {

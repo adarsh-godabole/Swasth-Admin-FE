@@ -1,6 +1,8 @@
 import { request } from './client';
 import type {
   CancelSubscriptionInput,
+  CheckIn,
+  CheckInDay,
   CreateMemberInput,
   CreatePlanInput,
   CreateSubscriptionInput,
@@ -149,5 +151,31 @@ export const subscriptions = {
   /** The follow-up call list. `days` defaults to 7, max 90. */
   expiring(days = 7) {
     return request<Subscription[]>('/subscriptions/expiring', { query: { days } });
+  },
+};
+
+// --------------------------------------------------------- check-ins (§5c)
+
+export const checkIns = {
+  /**
+   * The day's register, newest first. `date` must be `YYYY-MM-DD` — anything
+   * else makes the API return a 500, so never pass free text.
+   */
+  forDay(date?: string) {
+    return request<CheckInDay>('/check-ins', { query: date ? { date } : undefined });
+  },
+
+  /**
+   * Record a visit from the desk. Takes no body. A second call on the same day
+   * is not an error: it returns the first visit with `alreadyCheckedIn: true`.
+   * Requires an active membership, else 403 with a message naming the case.
+   */
+  record(memberId: string) {
+    return request<CheckIn>(`/members/${memberId}/check-ins`, { method: 'POST' });
+  },
+
+  /** One member's visit history, newest first. A plain array, not paginated. */
+  forMember(memberId: string) {
+    return request<CheckIn[]>(`/members/${memberId}/check-ins`);
   },
 };

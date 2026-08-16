@@ -1,5 +1,5 @@
 import type { Tone } from '../components/Badge';
-import { formatDayCount } from '../lib/format';
+import { formatDate, formatDayCount } from '../lib/format';
 import type { MemberMembership, Subscription, SubscriptionStatus } from '../api/types';
 
 /**
@@ -31,7 +31,11 @@ export function summariseMembership(
   }
 
   if (status === 'UPCOMING') {
-    return { label: `${planName} · upcoming`, tone: 'indigo', detail: 'Starts later' };
+    return {
+      label: `${planName} · from ${formatDate(membership.startDate)}`,
+      tone: 'indigo',
+      detail: 'Not active yet',
+    };
   }
 
   if (status === 'EXPIRED' || daysRemaining < 0) {

@@ -22,6 +22,7 @@ export type DurationUnit = 'DAY' | 'MONTH';
 export type PaymentMethod = 'CASH' | 'UPI' | 'CARD' | 'BANK_TRANSFER' | 'ONLINE' | 'OTHER';
 export type PaymentStatus = 'PAID' | 'PARTIAL' | 'PENDING';
 export type SubscriptionStatus = 'ACTIVE' | 'UPCOMING' | 'EXPIRED' | 'CANCELLED';
+export type CheckInSource = 'APP' | 'FRONT_DESK';
 
 /** Roles allowed to use this portal. Anything else gets 403 on every call. */
 export const STAFF_ROLES: readonly GymRole[] = ['GYM_ADMIN', 'OWNER'];
@@ -79,6 +80,11 @@ export const SUBSCRIPTION_STATUS_LABELS: Record<SubscriptionStatus, string> = {
   UPCOMING: 'Upcoming',
   EXPIRED: 'Expired',
   CANCELLED: 'Cancelled',
+};
+
+export const CHECK_IN_SOURCE_LABELS: Record<CheckInSource, string> = {
+  APP: 'App',
+  FRONT_DESK: 'Front desk',
 };
 
 export const ROLE_LABELS: Record<GymRole, string> = {
@@ -357,4 +363,33 @@ export interface MemberMembership {
   /** Last day covered once a queued renewal is counted. */
   coveredUntil: string;
   hasRenewalQueued: boolean;
+}
+
+// ------------------------------------------------------- check-ins (§5c)
+
+/**
+ * One visit. There is no check-out, so this records arrival only — there is no
+ * live occupancy to show, just who came in on a given day.
+ */
+export interface CheckIn {
+  id: string;
+  memberId: string;
+  /** The gym's local day, computed from the gym's timezone rather than UTC. */
+  date: string;
+  checkedInAt: string;
+  source: CheckInSource;
+  /**
+   * Only meaningful on the POST response: `true` means they were already checked
+   * in today and this returned the existing visit rather than creating one.
+   */
+  alreadyCheckedIn: boolean;
+  /** Present on the day register; absent from a member's own history. */
+  member?: SubscriptionMember;
+}
+
+/** `GET /check-ins?date=` — the day's register. */
+export interface CheckInDay {
+  date: string;
+  total: number;
+  items: CheckIn[];
 }

@@ -2,7 +2,8 @@
 
 Web admin portal for a gym's front desk: **manage the gym's members and sell
 them memberships** — register walk-ins, find them, edit them, suspend and
-reinstate them, sell and renew plans, and take cash against a balance.
+reinstate them, sell and renew plans, take cash against a balance, record who
+came in today, and see how the gym is doing.
 
 It talks to an existing deployed REST API which lives in a separate repo and is
 not modified from here.
@@ -70,7 +71,8 @@ src/
                     membership presentation + the sell/pay/cancel panel
   components/       Button, Field, Modal, Toast, Badge, loading/empty/error states
   routes/           LoginPage, MembersPage, RegisterMemberPage, MemberDetailPage,
-                    PlansPage, RenewalsPage
+                    PlansPage, RenewalsPage, CheckInsPage, InsightsPage
+  components/charts/ hand-rolled SVG marks + the validated chart tokens
   hooks/            useDebouncedValue, useCountdown, useSlowRequest
 ```
 
@@ -126,6 +128,59 @@ a call list on its own.
 
 Money is cash-in-hand: there is no payment gateway, and the UI says so.
 
+### Check-ins
+
+[src/routes/CheckInsPage.tsx](src/routes/CheckInsPage.tsx) is the desk's busiest
+screen: a search box that records the visit of whoever is at the counter, above
+the day's register. Members can also check themselves in from the app, so rows
+are tagged **App** or **Front desk**.
+
+There is no check-out, so this is an arrivals register, not live occupancy.
+Recording always stamps the current time, so on a past day the check-in box is
+replaced by an explanation rather than a control that would lie about when
+someone came in.
+
+Two behaviours the UI leans on:
+
+- **One check-in per member per day.** A second attempt is a `200` carrying the
+  first visit with `alreadyCheckedIn: true`, not an error, so it reports "already
+  checked in at 6:47 pm". Anyone already in today shows a ✓ and their time
+  instead of a button.
+- **Check-in needs an active membership**, and the `403` doubles as a renewal
+  prompt: the message appears inline against that person with a link into their
+  page to sell or renew.
+
+Days are the gym's local days, so "today" is computed from the gym's `timezone`
+rather than the browser's — a desk machine set to another zone must not disagree
+with the register about which day it is.
+
+### Insights
+
+[src/routes/InsightsPage.tsx](src/routes/InsightsPage.tsx). There is no
+statistics endpoint and inventing one is off the table, so every figure is
+assembled from routes that exist — see
+[src/members/insightQueries.ts](src/members/insightQueries.ts):
+
+| Panel | Built from |
+| --- | --- |
+| Headline counts | `GET /members?limit=1&membershipStatus=…`, reading `total` |
+| Attendance | `GET /check-ins?date=…`, one request per day in the window |
+| Renewals due | `GET /subscriptions/expiring?days=…`, bucketed by urgency |
+| Plan sales | `GET /plans/:id`, which carries `timesSold` |
+
+Charts are hand-rolled SVG — no charting dependency. Every series is either a
+single hue or an **ordinal ramp**, because each scale here is ordered
+(membership health, renewal urgency); the ramps were checked with the dataviz
+validator against this app's white card surface for monotone lightness, step
+separation and contrast. A categorical red/green split was specifically
+rejected: it fails colourblind separation (ΔE 4.1), and these scales are ordered
+anyway. Each card carries a table view, tooltips on hover **and** keyboard
+focus, and holds its previous render while refetching rather than flashing a
+skeleton.
+
+The charts are light-only, matching the rest of the portal — the app has no dark
+mode, and giving only the charts one would be incoherent.
+
 ## Known API limitations
 
 Found while building, all verified against the deployed backend.
@@ -142,6 +197,24 @@ The sell dialog offers only plans that are `isActive` and not archived.
 **`POST /subscriptions/:id/payment` rejects `notes`** — it takes `amount` and
 `paymentMethod` only, so a part payment can't carry its own note. The note
 captured at the point of sale is the only one a membership has.
+
+**`membershipStatus=EXPIRING` is a SUBSET of `ACTIVE`, not a sibling bucket.**
+Verified by selling a same-day plan: `ACTIVE` went 4→5 and `EXPIRING` 0→1 for the
+same person. The four counts therefore must never simply be summed — the
+part-to-whole breakdown carves expiring back out of active, and the population
+total comes from a separate unfiltered call.
+
+**`GET /check-ins?date=` returns a 500 on an unparseable date** rather than a
+400, so the portal only ever sends `YYYY-MM-DD` from a date input.
+
+**The check-in 403 messages are written for the member app** — "Your membership
+has expired. Please renew at the gym." reads oddly at the desk, and says
+"expired" even when the real reason is that the plan hasn't started yet. The
+message is still shown verbatim, with the desk-side detail (the actual start
+date) added beneath it rather than substituted for it.
+
+**`POST /members/:id/check-ins` ignores its body** instead of rejecting unknown
+fields the way every other write does, so the portal sends none.
 
 **A queued renewal is not an overlap.** Selling a second plan without a start
 date succeeds and queues it from the day after the current one ends; only an
@@ -161,5 +234,6 @@ back that way. Everything renders it through `memberName()` in
 [src/lib/format.ts](src/lib/format.ts), which falls back to "Unnamed member".
 
 **Things that still don't exist**, so the portal doesn't pretend they do: no
-payment gateway (cash recorded by hand), no dashboard statistics endpoint, no way
-to add a trainer or a second admin, and no check-ins or classes.
+payment gateway (cash recorded by hand), no check-*out* and therefore no live
+occupancy, no dashboard statistics endpoint, no way to add a trainer or a second
+admin, and no classes or trainers.

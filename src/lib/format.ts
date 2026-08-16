@@ -75,3 +75,20 @@ export function formatDayCount(days: number): string {
   if (days === 0) return 'today';
   return `${n} ${n === 1 ? 'day' : 'days'}`;
 }
+
+const TIME_FMT = new Intl.DateTimeFormat('en-IN', {
+  hour: 'numeric',
+  minute: '2-digit',
+  hour12: true,
+});
+
+/** `2026-08-16T13:17:59Z` → `6:47 pm`. */
+export function formatTime(iso: string | null | undefined, timeZone?: string): string {
+  if (!iso) return '—';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '—';
+  const formatter = timeZone
+    ? new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone })
+    : TIME_FMT;
+  return formatter.format(date).replace(/\s*([ap])\.?m\.?/i, (_, m) => ` ${m.toLowerCase()}m`);
+}

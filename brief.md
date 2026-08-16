@@ -560,6 +560,56 @@ filtering on `source`.
 `membership` above, or `null`. That's the app home screen: plan name, days left,
 expiry date.
 
+## 5c. Check-ins / attendance
+
+Added 2026-08-14. **No QR, no scanner** — the member taps a button in the app
+and confirms. Staff can also record a visit at the desk.
+
+```
+GET  /check-ins?date=2026-08-14        who came in that day (defaults to today)
+POST /members/:memberId/check-ins      record a visit from the desk
+GET  /members/:memberId/check-ins      one member's visit history
+```
+
+`GET /check-ins` returns the day's register:
+
+```json
+{
+  "date": "2026-08-14T00:00:00.000Z",
+  "total": 2,
+  "items": [
+    {
+      "id": "…", "memberId": "…",
+      "date": "2026-08-14T00:00:00.000Z",
+      "checkedInAt": "2026-08-14T17:12:04.000Z",
+      "source": "FRONT_DESK",
+      "alreadyCheckedIn": false,
+      "member": { "id": "…", "memberCode": "SWK-0002", "fullName": "Priya Nair", "phone": "+919845012345" }
+    }
+  ]
+}
+```
+
+`source` is `APP` (member tapped it) or `FRONT_DESK` (staff recorded it).
+
+Things worth knowing:
+
+- **One check-in per member per day.** Recording a second returns the first with
+  `alreadyCheckedIn: true` and a `200` — not an error. Show it as "already
+  checked in at 5:12 pm".
+- **Requires an active membership.** A lapsed or never-bought member gets a
+  `403` with a message naming which case it is. Useful at the desk: it doubles
+  as a renewal prompt.
+- **Days are the gym's local days**, computed from the gym's timezone rather
+  than UTC, so early-morning visits land on the right day. Pass `date` as
+  `YYYY-MM-DD`.
+- `member.lastVisitAt` on the member record updates on every check-in, so the
+  "hasn't been in for a fortnight" list you'll want is already possible with the
+  existing member data.
+
+There is **no check-out**, so there is no live occupancy — only who came in on a
+given day.
+
 ## 6. Enums
 
 Use these exact strings. Add human labels in the UI.
@@ -576,6 +626,7 @@ type DurationUnit = 'DAY' | 'MONTH';
 type PaymentMethod = 'CASH' | 'UPI' | 'CARD' | 'BANK_TRANSFER' | 'ONLINE' | 'OTHER';
 type PaymentStatus = 'PAID' | 'PARTIAL' | 'PENDING';
 type SubscriptionStatus = 'ACTIVE' | 'UPCOMING' | 'EXPIRED' | 'CANCELLED';
+type CheckInSource = 'APP' | 'FRONT_DESK';
 ```
 
 ---
@@ -606,8 +657,9 @@ Read these before designing screens. They are real, current, and will bite.
    and read `total`) plus `GET /subscriptions/expiring`. Don't invent
    `/dashboard/stats`.
 
-5. **No check-in, classes or trainers.** None of it exists yet. Payments are
-   recorded by hand against a membership — no gateway, and none planned for now.
+5. **No classes or trainers.** Still nothing. Check-in now exists (section 5c),
+   but there is no check-*out*, so no live occupancy. Payments are recorded by
+   hand against a membership — no gateway, and none planned for now.
 
 6. **The 60-second OTP cooldown** described in section 3. The single most likely
    thing to make the portal feel broken.
