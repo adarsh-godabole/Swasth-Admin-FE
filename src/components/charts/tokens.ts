@@ -1,36 +1,39 @@
 /**
- * Chart tokens for the portal's surface (white cards on slate-50).
+ * Chart tokens for the portal's surface — Nocturne cards on the dark ground.
  *
- * The ordinal ramps below were validated with the dataviz validator against
- * `--surface #ffffff --ordinal`: monotone lightness, adjacent ΔL ≥ 0.06, light
- * end clearing 2:1, single hue. Re-run it if you change a value.
- *
- * Deliberately NOT a categorical palette: every series here is either a single
- * series or an ordered scale, so one hue light→dark is the correct encoding and
- * sidesteps the red/green CVD trap entirely.
+ * Single and ordered series ride the accent ramp, which is monotone in
+ * lightness by construction (it is generated in OKLCH on one shared lightness
+ * scale), so dark→light reads as an ordinal scale and no categorical hue wheel
+ * is needed. The one exception is membership health, which is a genuine state
+ * scale and takes the status trio the rest of the portal already uses.
  */
 export const VIZ = {
-  surface: '#ffffff',
-  ink: '#0f172a',
-  inkSecondary: '#475569',
-  muted: '#94a3b8',
-  grid: '#e2e8f0',
-  axis: '#cbd5e1',
+  surface: '#232532',
+  ink: '#f3f5fe',
+  inkSecondary: '#b2b6ca',
+  muted: '#9397ab',
+  grid: '#292b31',
+  axis: '#3f424d',
 
   /** Single-series marks (attendance, plan sales). */
-  series: '#4f46e5',
+  series: '#5d5294',
   /** De-emphasised companion for context marks. */
-  seriesMuted: '#c7d2fe',
+  seriesMuted: '#2b2741',
 
-  /** Membership health, most healthy → least. Validated 4-step ordinal. */
-  ordinal4: ['#3730a3', '#4f46e5', '#6366f1', '#818cf8'],
-  /** Renewal urgency, soonest → furthest. Validated 3-step ordinal. */
-  ordinal3: ['#312e81', '#4f46e5', '#818cf8'],
+  /**
+   * Membership health, healthiest → least. These are states rather than an
+   * ordered magnitude, so they take the same ok/warn/bad the tables use — the
+   * dot-plus-phrase legend carries the meaning for anyone who can't separate
+   * the hues.
+   */
+  ordinal4: ['#4fae76', '#cf9338', '#cf5a53', '#3f424d'],
+  /** Renewal urgency, soonest → furthest: warning, then down the accent ramp. */
+  ordinal3: ['#cf9338', '#968ae0', '#5d5294'],
 } as const;
 
 /** Marks are thin by spec — never fill the whole band. */
 export const MAX_BAR = 24;
-/** White doing the separating, rather than a stroke around each mark. */
+/** The card ground doing the separating, rather than a stroke per mark. */
 export const SURFACE_GAP = 2;
 
 /** A rect with only its data-end rounded; the baseline end stays square. */

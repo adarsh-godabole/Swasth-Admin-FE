@@ -69,26 +69,23 @@ export function RegisterMemberPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl">
-      <div className="mb-4">
-        <Link to="/members" className="text-sm text-slate-500 hover:text-slate-700">
-          ← Back to members
-        </Link>
-        <h1 className="mt-1 text-xl font-semibold text-slate-900">Register member</h1>
-        <p className="mt-0.5 text-sm text-slate-500">
-          Name and phone number are all you need. The member doesn't need the app installed — their
-          record waits for them if they sign in later.
-        </p>
-      </div>
+    <div className="max-w-3xl">
+      <Link to="/members" className="text-xs text-slate-500 hover:text-slate-700">
+        ← Members
+      </Link>
+      <h1 className="mt-2.5 text-2xl font-medium text-slate-900">Register a walk-in</h1>
+      <p className="mt-1.5 max-w-xl text-[13px] leading-relaxed text-slate-600">
+        Name and number are all you need. They don't need the app — the record waits for them if
+        they sign in later.
+      </p>
 
       <form
         onSubmit={(event) => {
           event.preventDefault();
           submit();
         }}
-        className="space-y-4"
       >
-        <div className="rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200">
+        <div className="sq-panel mt-5 p-5">
           <div className="grid gap-4 sm:grid-cols-2">
             <TextField
               label="Full name"
@@ -107,6 +104,7 @@ export function RegisterMemberPage() {
               type="tel"
               inputMode="tel"
               autoComplete="off"
+              className="tnum block w-full rounded-md bg-white px-2.5 py-2 text-sm text-slate-900 ring-1 ring-slate-300 ring-inset placeholder:text-slate-500 hover:ring-slate-400 focus:ring-2 focus:ring-indigo-600"
               value={values.phone}
               error={errors.phone}
               hint="10-digit Indian mobile, or +country code"
@@ -116,43 +114,59 @@ export function RegisterMemberPage() {
           </div>
 
           {conflict && (
-            <div
-              role="alert"
-              className="mt-4 rounded-md bg-amber-50 px-3 py-3 text-sm text-amber-900 ring-1 ring-amber-200 ring-inset"
-            >
-              <p className="font-medium">{conflict}</p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Button
-                  variant="secondary"
-                  size="sm"
+            <div role="alert" className="sq-note sq-note-bad mt-3.5">
+              <p className="text-[13px] text-red-700">{conflict}</p>
+              <p className="mt-1 text-xs text-slate-600">
+                <button
+                  type="button"
+                  className="text-indigo-700 hover:underline"
                   onClick={() =>
-                    navigate(
-                      `/members?search=${encodeURIComponent(normalisePhone(values.phone))}`,
-                    )
+                    navigate(`/members?search=${encodeURIComponent(normalisePhone(values.phone))}`)
                   }
                 >
-                  Find this member
-                </Button>
-              </div>
+                  Open their record
+                </button>{' '}
+                instead — a duplicate number can't be registered twice.
+              </p>
             </div>
           )}
+
+          <div className="mt-4 flex flex-wrap items-center gap-2.5">
+            <Button type="submit" loading={create.isPending}>
+              Register member
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => navigate('/members')}
+              disabled={create.isPending}
+            >
+              Cancel
+            </Button>
+            {slow && create.isPending && <WakingServerNotice />}
+          </div>
         </div>
 
-        <div className="rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
+        <div className="mt-4 rounded-md ring-1 ring-slate-300 ring-inset">
           <button
             type="button"
             aria-expanded={showDetails}
             onClick={() => setShowDetails((current) => !current)}
-            className="flex w-full items-center justify-between px-5 py-3 text-left"
+            className="flex w-full items-center justify-between gap-4 px-4.5 py-3.5 text-left"
           >
-            <span className="text-sm font-medium text-slate-800">Additional details</span>
-            <span className="text-xs text-slate-500">
-              {showDetails ? 'Hide' : 'Optional — add now or later'}{' '}
-              <span aria-hidden="true">{showDetails ? '▲' : '▼'}</span>
+            <span>
+              <span className="block text-[13px] text-slate-900">Additional details</span>
+              <span className="mt-0.5 block text-xs text-slate-500">
+                Email, date of birth, height and weight, goal, medical notes, emergency contact,
+                front-desk notes
+              </span>
             </span>
+            <i
+              className={`ph ph-caret-${showDetails ? 'up' : 'down'} shrink-0 text-base text-slate-500`}
+              aria-hidden="true"
+            />
           </button>
           {showDetails && (
-            <div className="border-t border-slate-200 px-5 py-5">
+            <div className="border-t border-slate-200 px-4.5 py-5">
               <MemberDetailsFields
                 values={values}
                 errors={errors}
@@ -161,20 +175,6 @@ export function RegisterMemberPage() {
               />
             </div>
           )}
-        </div>
-
-        <div className="flex items-center gap-3">
-          <Button type="submit" loading={create.isPending}>
-            Register member
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={() => navigate('/members')}
-            disabled={create.isPending}
-          >
-            Cancel
-          </Button>
-          {slow && create.isPending && <WakingServerNotice />}
         </div>
       </form>
     </div>

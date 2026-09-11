@@ -11,7 +11,7 @@ export function NotStaffPage() {
 
   return (
     <div className="flex min-h-full items-center justify-center px-4 py-12">
-      <div className="w-full max-w-md rounded-lg bg-white p-6 text-center shadow-sm ring-1 ring-slate-200">
+      <div className="w-full max-w-md rounded-[14px] bg-white p-6 text-center shadow-[var(--shadow-sm)]">
         <h1 className="text-lg font-semibold text-slate-900">This portal is for gym staff</h1>
         <p className="mt-2 text-sm text-slate-600">
           You're signed in as{' '}

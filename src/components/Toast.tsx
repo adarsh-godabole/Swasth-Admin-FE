@@ -70,7 +70,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <div
             key={toast.id}
             role={toast.tone === 'error' ? 'alert' : 'status'}
-            className={`pointer-events-auto flex overflow-hidden rounded-lg shadow-lg ring-1 ${TONES[toast.tone]}`}
+            className={`pointer-events-auto flex overflow-hidden rounded-[14px] shadow-[var(--shadow-lg)] ring-1 ${TONES[toast.tone]}`}
           >
             <div className={`w-1 shrink-0 ${ACCENTS[toast.tone]}`} />
             <div className="flex-1 px-3 py-2.5 text-sm">

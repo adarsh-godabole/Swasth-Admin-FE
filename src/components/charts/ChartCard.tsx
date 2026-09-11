@@ -32,18 +32,18 @@ export function ChartCard({
   const id = useId();
 
   return (
-    <section className="rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200">
+    <section className="rounded-md bg-white p-3.5 shadow-[var(--shadow-sm)]">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold text-slate-800">{title}</h2>
-          {subtitle && <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>}
+          <h2 className="text-[15px] font-medium text-slate-900">{title}</h2>
+          {subtitle && <p className="mt-1 text-xs text-slate-500">{subtitle}</p>}
         </div>
         <button
           type="button"
           aria-expanded={showTable}
           aria-controls={`${id}-table`}
           onClick={() => setShowTable((current) => !current)}
-          className="rounded-md px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+          className="shrink-0 rounded-md px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-600/10"
         >
           {showTable ? 'Show chart' : 'Show table'}
         </button>
@@ -53,7 +53,7 @@ export function ChartCard({
         {showTable ? (
           <div id={`${id}-table`} className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="border-b border-slate-200 text-xs tracking-wide text-slate-500 uppercase">
+              <thead className="border-b border-slate-200 text-[10px] tracking-wider text-slate-500 uppercase">
                 <tr>
                   {columns.map((column) => (
                     <th
@@ -66,7 +66,7 @@ export function ChartCard({
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-slate-200">
                 {rows.map((row) => (
                   <tr key={String(row[0])}>
                     {row.map((cell, index) => (
@@ -91,7 +91,7 @@ export function ChartCard({
         )}
       </div>
 
-      {footer && <div className="mt-3 border-t border-slate-100 pt-3">{footer}</div>}
+      {footer && <div className="mt-3 border-t border-slate-200 pt-2.5">{footer}</div>}
     </section>
   );
 }
@@ -115,10 +115,10 @@ export function ChartTooltip({
   return (
     <div
       role="tooltip"
-      className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-md bg-slate-900 px-2 py-1 text-xs whitespace-nowrap text-white shadow-lg"
+      className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-md bg-slate-200 px-2 py-1 text-xs whitespace-nowrap text-slate-900 shadow-[var(--shadow-md)]"
       style={{ left, top: top - 8 }}
     >
-      <span className="text-slate-300">{title}</span> <span className="font-semibold">{value}</span>
+      <span className="text-slate-500">{title}</span> <span className="tnum font-medium">{value}</span>
     </div>
   );
 }

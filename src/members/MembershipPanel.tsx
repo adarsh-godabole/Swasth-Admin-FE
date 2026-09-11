@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../api/client';
 import { Badge } from '../components/Badge';
-import type { Tone } from '../components/Badge';
 import { Button } from '../components/Button';
 import { SelectField, TextAreaField, TextField } from '../components/Field';
 import { Modal } from '../components/Modal';
@@ -26,6 +25,7 @@ import type {
   CreateSubscriptionInput,
   Member,
   PaymentMethod,
+  PaymentStatus,
   Plan,
   Subscription,
 } from '../api/types';
@@ -70,12 +70,12 @@ export function MembershipPanel({ member }: { member: Member }) {
   );
 
   return (
-    <div className="mt-4 space-y-4">
-      <section className="rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-3">
+    <div className="flex flex-col gap-4">
+      <section className="overflow-hidden rounded-md bg-white shadow-[var(--shadow-sm)]">
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4.5 py-3">
           <div>
-            <h2 className="text-sm font-semibold text-slate-800">Current membership</h2>
-            <p className="mt-0.5 text-xs text-slate-500">
+            <h2 className="sq-lbl">Current membership</h2>
+            <p className="mt-1 text-xs text-slate-500">
               Cash is recorded by hand — there is no payment gateway.
             </p>
           </div>
@@ -96,12 +96,12 @@ export function MembershipPanel({ member }: { member: Member }) {
             retrying={history.isFetching}
           />
         ) : !current && !upcoming ? (
-          <p className="px-5 py-8 text-center text-sm text-slate-500">
+          <p className="px-5 py-8 text-center text-[13px] text-slate-500">
             No membership. This person has never bought a plan — they're a lead, not a paying
             member.
           </p>
         ) : (
-          <div className="divide-y divide-slate-100">
+          <div className="divide-y divide-slate-200">
             {current && (
               <LiveMembership
                 subscription={current}
@@ -123,13 +123,11 @@ export function MembershipPanel({ member }: { member: Member }) {
       </section>
 
       {past.length > 0 && (
-        <section className="rounded-lg bg-slate-50 ring-1 ring-slate-200">
-          <header className="border-b border-slate-200 px-5 py-2.5">
-            <h2 className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
-              Past memberships · {past.length}
-            </h2>
+        <section className="overflow-hidden rounded-md bg-white shadow-[var(--shadow-sm)]">
+          <header className="border-b border-slate-200 px-4.5 py-3">
+            <h2 className="sq-lbl">Past memberships · {past.length}</h2>
           </header>
-          <ul className="divide-y divide-slate-200/70">
+          <ul className="divide-y divide-slate-200">
             {past.map((subscription) => (
               <PastMembershipRow key={subscription.id} subscription={subscription} />
             ))}
@@ -224,10 +222,12 @@ function elapsedFraction(subscription: Subscription): number {
   return Math.min(1, Math.max(0, (now - start) / (end - start)));
 }
 
-function paymentTone(subscription: Subscription): Tone {
-  if (subscription.paymentStatus === 'PAID') return 'green';
-  return subscription.paymentStatus === 'PARTIAL' ? 'amber' : 'red';
-}
+/** Settled reads as calm, anything owing reads as a thing to collect. */
+const PAYMENT_COLOURS: Record<PaymentStatus, string> = {
+  PAID: 'var(--ok-txt)',
+  PARTIAL: 'var(--warn-txt)',
+  PENDING: 'var(--bad-txt)',
+};
 
 /**
  * A membership that is running or about to. Given real weight — plan name, a
@@ -246,106 +246,114 @@ function LiveMembership({
 }) {
   const active = subscription.status === 'ACTIVE';
   const expiringSoon = active && subscription.daysRemaining <= 7;
-  const accent = active
-    ? expiringSoon
-      ? 'bg-amber-500'
-      : 'bg-emerald-500'
-    : 'bg-indigo-500';
+  // One accent per membership: green while there is room, amber once the
+  // countdown matters, and the accent hue for anything not yet started.
+  const tone = active ? (expiringSoon ? 'warn' : 'ok') : null;
+  const figure = tone ? `var(--${tone}-txt)` : 'var(--color-accent-300)';
 
   return (
-    <div className="flex gap-4 px-5 py-4">
-      <div className={`w-1 shrink-0 rounded-full ${accent}`} aria-hidden="true" />
+    <div className="px-4.5 py-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="sq-lbl">{eyebrow}</p>
+          <h3 className="mt-1.5 text-xl font-medium text-slate-900">{subscription.planName}</h3>
+          <p className="tnum mt-1 text-[13px] text-slate-600">
+            {formatDate(subscription.startDate)} → {formatDate(subscription.endDate)} ·{' '}
+            {subscription.durationLabel}
+            {subscription.paymentMethod &&
+              ` · ${PAYMENT_METHOD_LABELS[subscription.paymentMethod].toLowerCase()}`}
+          </p>
+        </div>
 
-      <div className="min-w-0 flex-1">
-        <p className="text-xs font-medium tracking-wide text-slate-500 uppercase">{eyebrow}</p>
-
-        <div className="mt-1 flex flex-wrap items-center gap-2">
-          <span className="text-lg font-semibold text-slate-900">{subscription.planName}</span>
+        {active ? (
+          <div className="shrink-0 text-right">
+            <p className="tnum text-3xl leading-none font-medium" style={{ color: figure }}>
+              {Math.abs(subscription.daysRemaining)}
+            </p>
+            <p className="mt-1 text-[11px] text-slate-600">
+              {subscription.daysRemaining < 0
+                ? 'days ago'
+                : subscription.daysRemaining === 0
+                  ? 'ends today'
+                  : 'days left'}
+            </p>
+          </div>
+        ) : (
           <Badge tone={SUBSCRIPTION_TONES[subscription.status]}>
             {SUBSCRIPTION_STATUS_LABELS[subscription.status]}
           </Badge>
-          <Badge tone={paymentTone(subscription)}>
-            {PAYMENT_STATUS_LABELS[subscription.paymentStatus]}
-          </Badge>
-        </div>
-
-        <p className="mt-1 text-sm text-slate-600">
-          {formatDate(subscription.startDate)} → {formatDate(subscription.endDate)} ·{' '}
-          {subscription.durationLabel}
-        </p>
-
-        {active && (
-          <div className="mt-2 max-w-sm">
-            <div className="h-1.5 overflow-hidden rounded-full bg-slate-200">
-              <div
-                className={`h-full ${accent}`}
-                style={{ width: `${Math.round(elapsedFraction(subscription) * 100)}%` }}
-              />
-            </div>
-            <p
-              className={`mt-1 text-sm font-semibold ${
-                expiringSoon ? 'text-amber-700' : 'text-emerald-700'
-              }`}
-            >
-              {subscription.daysRemaining < 0
-                ? `Expired ${formatDayCount(subscription.daysRemaining)} ago`
-                : subscription.daysRemaining === 0
-                  ? 'Ends today'
-                  : `${formatDayCount(subscription.daysRemaining)} left`}
-            </p>
-          </div>
         )}
+      </div>
 
-        <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm">
-          <div className="flex gap-1.5">
-            <dt className="text-slate-500">Due</dt>
-            <dd className="font-medium text-slate-800">{formatMoney(subscription.amountDue)}</dd>
+      {active && (
+        <div className="mt-3.5 h-1 overflow-hidden rounded-full bg-slate-300">
+          <div
+            className="h-full rounded-full"
+            style={{
+              width: `${Math.round(elapsedFraction(subscription) * 100)}%`,
+              background: `var(--${tone})`,
+            }}
+          />
+        </div>
+      )}
+
+      <div className="mt-4.5 flex flex-wrap items-end justify-between gap-5">
+        <dl className="flex flex-wrap gap-x-7 gap-y-2">
+          <div>
+            <dt className="text-[11px] text-slate-500">Due</dt>
+            <dd className="tnum mt-0.5 text-[15px] text-slate-900">
+              {formatMoney(subscription.amountDue)}
+            </dd>
           </div>
-          <div className="flex gap-1.5">
-            <dt className="text-slate-500">Paid</dt>
-            <dd className="font-medium text-slate-800">{formatMoney(subscription.amountPaid)}</dd>
+          <div>
+            <dt className="text-[11px] text-slate-500">Paid</dt>
+            <dd className="tnum mt-0.5 text-[15px] text-slate-900">
+              {formatMoney(subscription.amountPaid)}
+            </dd>
           </div>
           {subscription.balance > 0 && (
-            <div className="flex gap-1.5">
-              <dt className="text-amber-700">Owing</dt>
-              <dd className="font-semibold text-amber-700">{formatMoney(subscription.balance)}</dd>
-            </div>
-          )}
-          {subscription.discount > 0 && (
-            <div className="flex gap-1.5">
-              <dt className="text-slate-500">Discount</dt>
-              <dd className="font-medium text-slate-800">{formatMoney(subscription.discount)}</dd>
-            </div>
-          )}
-          {subscription.paymentMethod && (
-            <div className="flex gap-1.5">
-              <dt className="text-slate-500">Method</dt>
-              <dd className="font-medium text-slate-800">
-                {PAYMENT_METHOD_LABELS[subscription.paymentMethod]}
+            <div>
+              <dt className="text-[11px] text-amber-700">Owing</dt>
+              <dd className="tnum mt-0.5 text-[15px] text-amber-700">
+                {formatMoney(subscription.balance)}
               </dd>
             </div>
           )}
+          {subscription.discount > 0 && (
+            <div>
+              <dt className="text-[11px] text-slate-500">Discount</dt>
+              <dd className="tnum mt-0.5 text-[15px] text-slate-900">
+                {formatMoney(subscription.discount)}
+              </dd>
+            </div>
+          )}
+          <div>
+            <dt className="text-[11px] text-slate-500">Payment</dt>
+            <dd className="mt-0.5 text-[15px]" style={{ color: PAYMENT_COLOURS[subscription.paymentStatus] }}>
+              {PAYMENT_STATUS_LABELS[subscription.paymentStatus]}
+            </dd>
+          </div>
         </dl>
 
-        {subscription.notes && (
-          <p className="mt-2 rounded-md bg-slate-50 px-3 py-2 text-sm whitespace-pre-wrap text-slate-600">
-            {subscription.notes}
-          </p>
-        )}
+        <div className="flex shrink-0 flex-wrap gap-2">
+          {canTakePayment(subscription) && (
+            <Button size="sm" onClick={onPay}>
+              Take {formatMoney(subscription.balance)}
+            </Button>
+          )}
+          {isCancellable(subscription) && (
+            <Button variant="ghost" size="sm" onClick={onCancel}>
+              Cancel
+            </Button>
+          )}
+        </div>
       </div>
 
-      <div className="flex shrink-0 flex-col items-end gap-2">
-        {canTakePayment(subscription) && (
-          <Button variant="secondary" size="sm" onClick={onPay}>
-            Record payment
-          </Button>
-        )}
-        {isCancellable(subscription) && (
-          <Button variant="ghost" size="sm" onClick={onCancel}>
-            Cancel
-          </Button>
-        )}
-      </div>
+      {subscription.notes && (
+        <p className="sq-note sq-note-warn mt-3.5 text-xs whitespace-pre-wrap text-slate-600">
+          {subscription.notes}
+        </p>
+      )}
     </div>
   );
 }
@@ -353,18 +361,20 @@ function LiveMembership({
 /** A finished membership. Deliberately quiet — it is a record, not something to act on. */
 function PastMembershipRow({ subscription }: { subscription: Subscription }) {
   return (
-    <li className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-5 py-2.5 text-sm">
+    <li className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4.5 py-2.5 text-[13px] text-slate-600">
       <div className="flex flex-wrap items-baseline gap-2">
-        <span className="font-medium text-slate-700">{subscription.planName}</span>
-        <span className="text-xs text-slate-500">
+        <span className="text-slate-800">{subscription.planName}</span>
+        <span className="tnum text-xs text-slate-500">
           {formatDate(subscription.startDate)} → {formatDate(subscription.endDate)}
         </span>
-        <Badge tone="slate">{SUBSCRIPTION_STATUS_LABELS[subscription.status]}</Badge>
+        <span className="text-xs" style={{ color: 'var(--bad-txt)' }}>
+          {SUBSCRIPTION_STATUS_LABELS[subscription.status].toLowerCase()}
+        </span>
         {subscription.balance > 0 && (
           <Badge tone="amber">{formatMoney(subscription.balance)} never collected</Badge>
         )}
       </div>
-      <div className="text-xs text-slate-500">
+      <div className="tnum text-xs text-slate-500">
         {formatMoney(subscription.amountPaid)} paid
         {subscription.cancelledAt && (
           <>
@@ -479,7 +489,7 @@ function SellPlanDialog({
           Loading plans…
         </div>
       ) : sellable.length === 0 ? (
-        <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-200 ring-inset">
+        <p className="rounded-md bg-amber-50 px-3 py-2 text-[13px] text-amber-700 ring-1 ring-amber-200 ring-inset">
           There are no plans on sale. Add one on the Plans screen first.
         </p>
       ) : (
@@ -574,7 +584,7 @@ function SellPlanDialog({
                 </SelectField>
               </div>
 
-              <dl className="rounded-md bg-slate-50 px-3 py-2 text-sm">
+              <dl className="rounded-md bg-slate-50 px-3 py-2 text-sm ring-1 ring-slate-300 ring-inset">
                 <div className="flex justify-between">
                   <dt className="text-slate-600">Amount due</dt>
                   <dd className="font-medium text-slate-900">{formatMoney(due)}</dd>
@@ -612,7 +622,7 @@ function SellPlanDialog({
           {conflict && (
             <div
               role="alert"
-              className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-200 ring-inset"
+              className="rounded-md bg-amber-50 px-3 py-2 text-[13px] text-amber-700 ring-1 ring-amber-200 ring-inset"
             >
               <p className="font-medium">{conflict}</p>
               {suggestion && (
@@ -789,7 +799,7 @@ function CancelDialog({
             . Cancelling frees the dates up so you can sell a different plan.
           </p>
           {subscription.balance > 0 && (
-            <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-200 ring-inset">
+            <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-[13px] text-amber-700 ring-1 ring-amber-200 ring-inset">
               {formatMoney(subscription.balance)} is still owing on this membership. Cancelling does
               not write that off — settle it at the desk if they've paid.
             </p>

@@ -127,7 +127,7 @@ export function InsightsPage() {
 
   if (stats.isError) {
     return (
-      <div className="rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
+      <div className="rounded-md bg-white shadow-[var(--shadow-sm)]">
         <ErrorState error={stats.error} onRetry={() => stats.refetch()} retrying={stats.isFetching} />
       </div>
     );
@@ -135,18 +135,18 @@ export function InsightsPage() {
 
   return (
     <div>
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-slate-900">Insights</h1>
-          <p className="mt-0.5 text-sm text-slate-500">
-            Built from the member, check-in and plan records — there is no separate analytics
-            feed, so these are live counts rather than a cached report.
+      <div className="flex flex-wrap items-end justify-between gap-5">
+        <div className="max-w-lg">
+          <h1 className="text-2xl font-medium text-slate-900">Insights</h1>
+          <p className="mt-1 text-[13px] leading-relaxed text-slate-600">
+            Live counts assembled from the member, check-in and plan records. There is no
+            analytics feed to cache.
           </p>
         </div>
 
         {/* One control row above everything it scopes, never inside a card. */}
         <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-slate-600">
+          <label className="flex items-center gap-2 text-xs text-slate-500">
             Attendance
             <select
               value={attendanceDays}
@@ -154,7 +154,7 @@ export function InsightsPage() {
                 params.set('days', event.target.value);
                 setParams(params);
               }}
-              className="rounded-md bg-white px-2 py-1.5 text-sm ring-1 ring-slate-300 ring-inset focus:ring-2 focus:ring-indigo-600"
+              className="rounded-md bg-white px-2 py-1.5 text-[13px] text-slate-700 ring-1 ring-slate-300 ring-inset focus:ring-2 focus:ring-indigo-600"
             >
               {ATTENDANCE_WINDOWS.map((value) => (
                 <option key={value} value={value}>
@@ -163,7 +163,7 @@ export function InsightsPage() {
               ))}
             </select>
           </label>
-          <label className="flex items-center gap-2 text-sm text-slate-600">
+          <label className="flex items-center gap-2 text-xs text-slate-500">
             Look ahead
             <select
               value={horizon}
@@ -171,7 +171,7 @@ export function InsightsPage() {
                 params.set('horizon', event.target.value);
                 setParams(params);
               }}
-              className="rounded-md bg-white px-2 py-1.5 text-sm ring-1 ring-slate-300 ring-inset focus:ring-2 focus:ring-indigo-600"
+              className="rounded-md bg-white px-2 py-1.5 text-[13px] text-slate-700 ring-1 ring-slate-300 ring-inset focus:ring-2 focus:ring-indigo-600"
             >
               {LOOK_AHEAD.map((value: number) => (
                 <option key={value} value={value}>
@@ -184,22 +184,28 @@ export function InsightsPage() {
       </div>
 
       {/* Hero figure — exactly one per view. */}
-      <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200">
-          <p className="text-sm text-slate-500">Active memberships</p>
-          <p className="mt-1 text-5xl font-semibold text-slate-900">
+      <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-[340px_repeat(3,minmax(0,1fr))]">
+        <div className="sq-panel p-5">
+          <p className="sq-lbl" style={{ color: 'var(--color-accent-300)' }}>
+            Active memberships
+          </p>
+          <p className="tnum mt-2 text-6xl leading-none font-medium text-slate-900">
             {stats.data?.activeTotal ?? 0}
           </p>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-2 text-xs text-slate-600">
             of {totalMembers} {totalMembers === 1 ? 'person' : 'people'} linked to this gym ·
             includes those expiring soon
           </p>
         </div>
         <StatTile
-          label={`Visits in ${attendanceDays} days`}
+          label={`Visits · ${attendanceDays} days`}
           value={String(visitsInWindow)}
-          hint={`Busiest day: ${busiest.total}`}
-          to="/check-ins"
+          hint={`Busiest day ${busiest.total} · avg ${
+            attendance.days.length === 0
+              ? 0
+              : Math.round(visitsInWindow / attendance.days.length)
+          }`}
+          to="/desk"
         />
         <StatTile
           label="Expiring soon"
@@ -250,7 +256,7 @@ export function InsightsPage() {
             <p className="text-xs text-slate-500">
               {payingShare}% have bought a plan at some point. The rest are leads — mostly app
               signups auto-linked to the gym.{' '}
-              <Link to="/members?membership=NONE" className="font-medium text-indigo-700 hover:underline">
+              <Link to="/members?membership=NONE" className="text-indigo-700 hover:underline">
                 See them
               </Link>
             </p>
@@ -273,9 +279,15 @@ export function InsightsPage() {
           columns={[{ label: 'When' }, { label: 'Memberships', align: 'right' }]}
           rows={renewalPoints.map((point) => [point.title, point.value])}
           footer={
-            <Link to="/renewals" className="text-xs font-medium text-indigo-700 hover:underline">
-              Open the call list →
-            </Link>
+            <p className="text-xs text-slate-500">
+              {renewals.length === 0 ? (
+                'Nothing due in this window.'
+              ) : (
+                <Link to="/renewals" className="text-indigo-700 hover:underline">
+                  Open the call list →
+                </Link>
+              )}
+            </p>
           }
         >
           {expiring.isError ? (
@@ -294,9 +306,9 @@ export function InsightsPage() {
             rows={planPoints.map((point) => [point.title, point.value])}
           >
             {planPoints.length === 0 ? (
-              <p className="py-6 text-center text-sm text-slate-500">
+              <p className="py-6 text-center text-[13px] text-slate-500">
                 No plans yet.{' '}
-                <Link to="/plans" className="font-medium text-indigo-700 hover:underline">
+                <Link to="/plans" className="text-indigo-700 hover:underline">
                   Add one
                 </Link>{' '}
                 to start selling memberships.
@@ -327,15 +339,20 @@ function StatTile({
   return (
     <Link
       to={to}
-      className="block rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200 transition-colors hover:ring-indigo-300"
+      className="block rounded-md bg-white p-3.5 transition-shadow hover:shadow-[var(--shadow-md)]"
+      style={{
+        boxShadow: tone === 'amber' ? 'inset 0 0 0 1px var(--warn-br)' : 'var(--shadow-sm)',
+      }}
     >
-      <p className="text-sm text-slate-500">{label}</p>
+      <p className="sq-lbl" style={tone === 'amber' ? { color: 'var(--warn-txt)' } : undefined}>
+        {label}
+      </p>
       <p
-        className={`mt-1 text-3xl font-semibold ${tone === 'amber' ? 'text-amber-700' : 'text-slate-900'}`}
+        className={`tnum mt-2 text-3xl font-medium ${tone === 'amber' ? 'text-amber-700' : 'text-slate-900'}`}
       >
         {value}
       </p>
-      <p className="mt-1 text-xs text-slate-500">{hint}</p>
+      <p className="mt-1.5 text-xs text-slate-500">{hint}</p>
     </Link>
   );
 }

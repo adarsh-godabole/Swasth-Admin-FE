@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ApiError } from '../api/client';
-import { Badge, StatusBadge } from '../components/Badge';
+import { StatusBadge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { TextField } from '../components/Field';
 import { Modal } from '../components/Modal';
@@ -58,7 +58,7 @@ export function MemberDetailPage() {
   if (query.isError) {
     const notFound = query.error instanceof ApiError && query.error.statusCode === 404;
     return (
-      <div className="rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
+      <div className="rounded-md bg-white shadow-[var(--shadow-sm)]">
         <ErrorState
           error={query.error}
           onRetry={notFound ? undefined : () => query.refetch()}
@@ -113,34 +113,29 @@ export function MemberDetailPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <Link to="/members" className="text-sm text-slate-500 hover:text-slate-700">
-        ← Back to members
+    <div>
+      <Link to="/members" className="text-xs text-slate-500 hover:text-slate-700">
+        ← Members
       </Link>
 
-      <header className="mt-2 flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <div className="flex size-12 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-700">
+      <header className="mt-2.5 flex flex-wrap items-start justify-between gap-5">
+        <div className="flex items-center gap-3.5">
+          <div
+            className="flex size-11.5 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-[15px] text-indigo-800"
+            style={{ boxShadow: 'inset 0 0 0 1px var(--color-accent-800)' }}
+          >
             {initials(member.fullName)}
           </div>
           <div>
-            <h1 className="text-xl font-semibold text-slate-900">{memberName(member)}</h1>
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-500">
-              {member.memberCode ? (
-                <span className="font-mono text-xs text-slate-600">{member.memberCode}</span>
-              ) : (
-                <span className="text-xs text-slate-400">No member code</span>
-              )}
+            <h1 className="text-2xl font-medium text-slate-900">{memberName(member)}</h1>
+            <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
               <StatusBadge status={member.status} />
-              <Badge tone={member.source === 'FRONT_DESK' ? 'slate' : 'indigo'}>
-                {SOURCE_LABELS[member.source]}
-              </Badge>
-              {member.hasAppAccount ? (
-                <Badge tone="indigo">App installed</Badge>
-              ) : (
-                <Badge tone="slate">No app yet</Badge>
-              )}
-            </div>
+              <span className="tnum">
+                {member.memberCode ?? 'No member code'} ·{' '}
+                {SOURCE_LABELS[member.source].toLowerCase()} ·{' '}
+                {member.hasAppAccount ? 'app installed' : 'no app yet'}
+              </span>
+            </p>
           </div>
         </div>
 
@@ -161,61 +156,30 @@ export function MemberDetailPage() {
       </header>
 
       {member.status !== 'ACTIVE' && (
-        <p className="mt-4 rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-700">
-          This member is <strong>{STATUS_LABELS[member.status].toLowerCase()}</strong> and cannot use
-          the mobile app. Reactivating keeps their original member code.
+        <p className="sq-note mt-4 text-[13px] text-slate-700">
+          This member is <strong>{STATUS_LABELS[member.status].toLowerCase()}</strong> and cannot
+          use the mobile app. Reactivating keeps their original member code.
         </p>
       )}
 
       {member.source === 'APP_SIGNUP' && !member.memberCode && (
-        <p className="mt-4 rounded-md bg-indigo-50 px-3 py-2 text-sm text-indigo-900 ring-1 ring-indigo-200 ring-inset">
-          This person signed up through the mobile app and has never been registered at the desk, so
-          they have no member code. They may never have paid or visited.
+        <p className="sq-note sq-note-accent mt-4 text-[13px] text-slate-600">
+          This person signed up through the mobile app and has never been registered at the desk,
+          so they have no member code. They may never have paid or visited.
         </p>
       )}
 
-      {/* Safety first — this is what matters on the gym floor. */}
-      <section className="mt-5 grid gap-4 sm:grid-cols-2">
-        <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
-          <h2 className="text-xs font-semibold tracking-wide text-amber-700 uppercase">
-            Medical notes
-          </h2>
-          {member.medicalNotes ? (
-            <p className="mt-2 text-sm whitespace-pre-wrap text-slate-800">{member.medicalNotes}</p>
-          ) : (
-            <p className="mt-2 text-sm text-slate-400">None recorded.</p>
-          )}
-        </div>
-        <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
-          <h2 className="text-xs font-semibold tracking-wide text-amber-700 uppercase">
-            Emergency contact
-          </h2>
-          {member.emergencyContactName || member.emergencyContactPhone ? (
-            <p className="mt-2 text-sm text-slate-800">
-              {member.emergencyContactName ?? 'Unnamed contact'}
-              {member.emergencyContactPhone && (
-                <>
-                  {' · '}
-                  <a
-                    href={`tel:${member.emergencyContactPhone}`}
-                    className="text-indigo-700 hover:underline"
-                  >
-                    {formatPhone(member.emergencyContactPhone)}
-                  </a>
-                </>
-              )}
-            </p>
-          ) : (
-            <p className="mt-2 text-sm text-slate-400">None recorded.</p>
-          )}
-        </div>
-      </section>
-
       {!editing && (
-        <>
-          <MembershipPanel member={member} />
-          <VisitsPanel member={member} />
-        </>
+        <div className="mt-5 grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="flex min-w-0 flex-col gap-4">
+            <MembershipPanel member={member} />
+            <VisitsPanel member={member} />
+          </div>
+          <div className="flex flex-col gap-4">
+            <OnTheFloor member={member} />
+            <ReadOnlyDetails member={member} />
+          </div>
+        </div>
       )}
 
       {editing ? (
@@ -226,7 +190,7 @@ export function MemberDetailPage() {
           }}
           className="mt-5 space-y-4"
         >
-          <div className="rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200">
+          <div className="rounded-md bg-white p-5 shadow-[var(--shadow-sm)]">
             <div className="grid gap-4 sm:grid-cols-2">
               <TextField
                 label="Full name"
@@ -265,9 +229,7 @@ export function MemberDetailPage() {
             {update.isPending && <span className="text-sm text-slate-500">Saving…</span>}
           </div>
         </form>
-      ) : (
-        <ReadOnlyDetails member={member} />
-      )}
+      ) : null}
 
       <DeactivateDialog
         member={member}
@@ -330,42 +292,127 @@ export function MemberDetailPage() {
   );
 }
 
+/**
+ * What a trainer needs before the member reaches the floor. It is the one card
+ * on the page that takes the warning treatment — medical notes and an
+ * emergency number are not reference data, they are things to act on.
+ */
+function OnTheFloor({ member }: { member: Member }) {
+  const contact = member.emergencyContactName || member.emergencyContactPhone;
+
+  return (
+    <section
+      className="rounded-md p-3.5"
+      style={{
+        background: 'linear-gradient(180deg, var(--bad-bg), var(--color-surface))',
+        boxShadow: 'inset 0 0 0 1px var(--bad-br)',
+      }}
+    >
+      <p className="sq-lbl" style={{ color: 'var(--bad-txt)' }}>
+        On the floor
+      </p>
+
+      <div className="mt-3 flex gap-2.5">
+        <i className="ph ph-first-aid-kit shrink-0 text-[17px] text-red-500" aria-hidden="true" />
+        {member.medicalNotes ? (
+          <p className="text-[13px] leading-relaxed whitespace-pre-wrap text-slate-800">
+            {member.medicalNotes}
+          </p>
+        ) : (
+          <p className="text-[13px] text-slate-500">No medical notes recorded.</p>
+        )}
+      </div>
+
+      <div className="mt-3.5 flex gap-2.5">
+        <i className="ph ph-phone-call shrink-0 text-[17px] text-red-500" aria-hidden="true" />
+        {contact ? (
+          <p className="text-[13px] leading-relaxed text-slate-800">
+            {member.emergencyContactName ?? 'Unnamed contact'}
+            {member.emergencyContactPhone && (
+              <>
+                <br />
+                <a
+                  href={`tel:${member.emergencyContactPhone}`}
+                  className="tnum text-indigo-700 hover:underline"
+                >
+                  {formatPhone(member.emergencyContactPhone)}
+                </a>
+              </>
+            )}
+          </p>
+        ) : (
+          <p className="text-[13px] text-slate-500">No emergency contact recorded.</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function ReadOnlyDetails({ member }: { member: Member }) {
-  const rows: { label: string; value: string }[] = [
-    { label: 'Phone', value: formatPhone(member.phone) },
+  const rows: { label: string; value: string; tnum?: boolean }[] = [
+    { label: 'Phone', value: formatPhone(member.phone), tnum: true },
     { label: 'Email', value: member.email ?? '—' },
     { label: 'Gender', value: member.gender ? GENDER_LABELS[member.gender] : '—' },
-    { label: 'Date of birth', value: formatDate(member.dateOfBirth) },
-    { label: 'Height', value: member.heightCm === null ? '—' : `${member.heightCm} cm` },
-    { label: 'Weight', value: member.weightKg === null ? '—' : `${member.weightKg} kg` },
-    { label: 'Goal', value: member.goal ? GOAL_LABELS[member.goal] : '—' },
+    { label: 'Born', value: formatDate(member.dateOfBirth), tnum: true },
     {
-      label: 'Activity level',
-      value: member.activityLevel ? ACTIVITY_LABELS[member.activityLevel] : '—',
+      label: 'Height / weight',
+      value:
+        member.heightCm === null && member.weightKg === null
+          ? '—'
+          : [
+              member.heightCm === null ? null : `${member.heightCm} cm`,
+              member.weightKg === null ? null : `${member.weightKg} kg`,
+            ]
+              .filter(Boolean)
+              .join(' · '),
+      tnum: true,
     },
-    { label: 'Joined', value: formatDate(member.joinedAt) },
-    { label: 'Last visit', value: formatDate(member.lastVisitAt) },
+    {
+      label: 'Goal',
+      value:
+        [
+          member.goal ? GOAL_LABELS[member.goal] : null,
+          member.activityLevel ? ACTIVITY_LABELS[member.activityLevel] : null,
+        ]
+          .filter(Boolean)
+          .join(' · ') || '—',
+    },
+    { label: 'Joined', value: formatDate(member.joinedAt), tnum: true },
+    { label: 'Last visit', value: formatDate(member.lastVisitAt), tnum: true },
   ];
 
   return (
-    <section className="mt-4 rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-200">
-      <h2 className="text-sm font-semibold text-slate-800">Details</h2>
-      <dl className="mt-3 grid gap-x-6 gap-y-3 sm:grid-cols-2">
-        {rows.map((row) => (
-          <div key={row.label} className="flex justify-between gap-4 border-b border-slate-100 pb-2">
-            <dt className="text-sm text-slate-500">{row.label}</dt>
-            <dd className="text-sm text-right font-medium text-slate-800">{row.value}</dd>
-          </div>
-        ))}
-      </dl>
+    <>
+      <section className="rounded-md bg-white p-3.5 shadow-[var(--shadow-sm)]">
+        <p className="sq-lbl">Details</p>
+        <dl className="mt-3">
+          {rows.map((row, index) => (
+            <div
+              key={row.label}
+              className={`flex justify-between gap-3 py-1.5 ${
+                index === rows.length - 1 ? '' : 'border-b border-slate-200'
+              }`}
+            >
+              <dt className="text-xs text-slate-500">{row.label}</dt>
+              <dd className={`text-right text-xs text-slate-800 ${row.tnum ? 'tnum' : ''}`}>
+                {row.value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </section>
 
-      <h2 className="mt-5 text-sm font-semibold text-slate-800">Front-desk notes</h2>
-      {member.notes ? (
-        <p className="mt-2 text-sm whitespace-pre-wrap text-slate-700">{member.notes}</p>
-      ) : (
-        <p className="mt-2 text-sm text-slate-400">None.</p>
-      )}
-    </section>
+      <section className="rounded-md bg-white p-3.5 shadow-[var(--shadow-sm)]">
+        <p className="sq-lbl">Front-desk notes</p>
+        {member.notes ? (
+          <p className="mt-2.5 text-[13px] leading-relaxed whitespace-pre-wrap text-slate-700">
+            {member.notes}
+          </p>
+        ) : (
+          <p className="mt-2.5 text-[13px] text-slate-500">None.</p>
+        )}
+      </section>
+    </>
   );
 }
 

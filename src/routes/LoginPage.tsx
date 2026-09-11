@@ -69,7 +69,7 @@ export function LoginPage() {
       auth.verifyOtp(values.phone, values.code),
     onSuccess: (result) => {
       signIn(result);
-      navigate('/members', { replace: true });
+      navigate('/desk', { replace: true });
     },
     onError: (error) => {
       setFormError({ message: errorMessage(error), details: errorDetails(error) });
@@ -116,31 +116,32 @@ export function LoginPage() {
   return (
     <div className="flex min-h-full items-center justify-center px-4 py-12">
       <div className="w-full max-w-sm">
-        <div className="mb-6 flex flex-col items-center text-center">
+        <div className="mb-7 flex items-center gap-3">
           {gym?.logoUrl ? (
-            <img src={gym.logoUrl} alt="" className="mb-3 size-14 rounded-lg object-cover" />
+            <img src={gym.logoUrl} alt="" className="size-10 rounded-md object-cover" />
           ) : (
-            <div className="mb-3 flex size-14 items-center justify-center rounded-lg bg-indigo-600 text-xl font-bold text-white">
+            <div
+              className="flex size-10 items-center justify-center rounded-md text-lg text-indigo-700"
+              style={{ boxShadow: 'inset 0 0 0 1px var(--color-accent-700)' }}
+            >
               S
             </div>
           )}
-          {gymQuery.isLoading ? (
-            <Spinner className="size-4 text-slate-400" />
-          ) : (
-            <h1 className="text-lg font-semibold text-slate-900">{gym?.name ?? 'Swasth Admin'}</h1>
-          )}
-          {gym?.city && (
-            <p className="text-sm text-slate-500">
-              {gym.city}
-              {gym.state ? `, ${gym.state}` : ''}
+          <div className="min-w-0">
+            {gymQuery.isLoading ? (
+              <Spinner className="size-4 text-slate-400" />
+            ) : (
+              <p className="text-[15px] font-medium text-slate-900">
+                {gym?.name ?? 'Swasth Admin'}
+              </p>
+            )}
+            <p className="mt-0.5 text-xs text-slate-500">
+              {gym?.city ? `${gym.city}${gym.state ? `, ${gym.state}` : ''} · ` : ''}staff portal
             </p>
-          )}
-          <p className="mt-1 text-xs font-medium tracking-wide text-slate-400 uppercase">
-            Staff portal
-          </p>
+          </div>
         </div>
 
-        <div className="rounded-lg bg-white p-6 shadow-sm ring-1 ring-slate-200">
+        <div>
           {step === 'phone' ? (
             <form
               onSubmit={(event) => {
@@ -149,6 +150,10 @@ export function LoginPage() {
               }}
               className="space-y-4"
             >
+              <h1 className="text-2xl font-medium text-slate-900">Sign in</h1>
+              <p className="!mt-1.5 text-[13px] text-slate-600">
+                Staff only. We'll text a 6-digit code to your registered number.
+              </p>
               <TextField
                 label="Mobile number"
                 required
@@ -177,16 +182,17 @@ export function LoginPage() {
               className="space-y-4"
             >
               <div>
-                <p className="text-sm text-slate-600">
-                  Code sent to <span className="font-medium text-slate-900">{maskedPhone}</span>
+                <h1 className="text-2xl font-medium text-slate-900">Enter the code</h1>
+                <p className="mt-1.5 text-[13px] text-slate-600">
+                  Sent to <span className="tnum text-slate-800">{maskedPhone}</span> ·{' '}
+                  <button
+                    type="button"
+                    onClick={changeNumber}
+                    className="text-indigo-700 hover:underline"
+                  >
+                    use another number
+                  </button>
                 </p>
-                <button
-                  type="button"
-                  onClick={changeNumber}
-                  className="mt-0.5 text-xs font-medium text-indigo-600 hover:text-indigo-700"
-                >
-                  Use a different number
-                </button>
               </div>
 
               <TextField
@@ -197,7 +203,7 @@ export function LoginPage() {
                 autoComplete="one-time-code"
                 maxLength={6}
                 value={code}
-                className="block w-full rounded-md bg-white px-3 py-2 text-center font-mono text-lg tracking-[0.4em] text-slate-900 ring-1 ring-slate-300 ring-inset focus:ring-2 focus:ring-indigo-600"
+                className="tnum block h-13 w-full rounded-md bg-white px-3 text-center text-xl tracking-[0.45em] text-slate-900 ring-1 ring-slate-300 ring-inset focus:ring-2 focus:ring-indigo-600"
                 onChange={(event) => {
                   setCode(event.target.value.replace(/\D/g, '').slice(0, 6));
                   setFormError(undefined);
@@ -206,8 +212,8 @@ export function LoginPage() {
               />
 
               {devCode && (
-                <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 ring-1 ring-amber-200 ring-inset">
-                  Development code: <span className="font-mono font-semibold">{devCode}</span>
+                <p className="sq-note sq-note-accent text-xs text-slate-600">
+                  Development code <span className="tnum text-indigo-800">{devCode}</span>
                 </p>
               )}
 
@@ -223,23 +229,21 @@ export function LoginPage() {
               </Button>
               {slow && verifyOtp.isPending && <WakingServerNotice />}
 
-              <div className="text-center">
-                <button
-                  type="button"
-                  onClick={() => sendOtp.mutate(phone)}
-                  disabled={cooldown.remaining > 0 || sendOtp.isPending}
-                  className="text-sm font-medium text-indigo-600 hover:text-indigo-700 disabled:cursor-not-allowed disabled:text-slate-400"
-                >
-                  {cooldown.remaining > 0
-                    ? `Resend code in ${cooldown.remaining}s`
-                    : sendOtp.isPending
-                      ? 'Sending…'
-                      : 'Resend code'}
-                </button>
-                <p className="mt-1 text-xs text-slate-400">
-                  The code expires in 5 minutes and allows 5 attempts.
-                </p>
-              </div>
+              <p className="text-center text-xs text-slate-500">
+                {cooldown.remaining > 0 ? (
+                  <span className="tnum">Resend in {cooldown.remaining}s</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => sendOtp.mutate(phone)}
+                    disabled={sendOtp.isPending}
+                    className="text-indigo-700 hover:underline disabled:text-slate-500 disabled:no-underline"
+                  >
+                    {sendOtp.isPending ? 'Sending…' : 'Resend code'}
+                  </button>
+                )}{' '}
+                · the code lasts 5 minutes and allows 5 attempts
+              </p>
             </form>
           )}
         </div>
@@ -252,11 +256,11 @@ function FormError({ message, details }: { message: string; details?: string[] }
   return (
     <div
       role="alert"
-      className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-800 ring-1 ring-red-200 ring-inset"
+      className="sq-note sq-note-bad"
     >
-      <p>{message}</p>
+      <p className="text-[13px] text-red-700">{message}</p>
       {details && details.length > 0 && (
-        <ul className="mt-1 list-disc pl-4 text-xs">
+        <ul className="mt-1 list-disc pl-4 text-xs text-slate-500">
           {details.map((detail) => (
             <li key={detail}>{detail}</li>
           ))}

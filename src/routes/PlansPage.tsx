@@ -9,6 +9,7 @@ import { EmptyState, ErrorState, LoadingBlock, WakingServerNotice } from '../com
 import { useSlowRequest } from '../hooks/useSlowRequest';
 import { formatMoney } from '../lib/format';
 import { useArchivePlan, useCreatePlan, usePlans, useUpdatePlan } from '../members/planQueries';
+import { usePlanSales } from '../members/insightQueries';
 import type { CreatePlanInput, DurationUnit, Plan } from '../api/types';
 
 interface PlanFormValues {
@@ -100,23 +101,33 @@ export function PlansPage() {
   const archive = useArchivePlan();
 
   const all = query.data ?? [];
+  const sales = usePlanSales();
+  const sold = new Map<string, number>(
+    sales.plans.flatMap((plan) =>
+      plan.timesSold === undefined ? [] : [[plan.id, plan.timesSold] as const],
+    ),
+  );
+
   const onSale = all.filter((plan) => !plan.archivedAt);
   const archived = all.filter((plan) => plan.archivedAt);
 
   return (
     <div>
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-slate-900">Plans</h1>
-          <p className="mt-0.5 text-sm text-slate-500">
-            What the gym sells. Editing a plan never changes memberships already sold — the name,
-            price and duration are copied onto each sale.
+      <div className="flex flex-wrap items-end justify-between gap-5">
+        <div className="max-w-xl">
+          <h1 className="text-2xl font-medium text-slate-900">Plans</h1>
+          <p className="mt-1 text-[13px] leading-relaxed text-slate-600">
+            Editing a plan never rewrites memberships already sold — name, price and duration are
+            copied onto each sale.
           </p>
         </div>
-        <Button onClick={() => setEditing('new')}>New plan</Button>
+        <Button onClick={() => setEditing('new')}>
+          <i className="ph ph-plus text-[14px]" aria-hidden="true" />
+          New plan
+        </Button>
       </div>
 
-      <div className="mt-4 rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
+      <div className="mt-4.5 overflow-hidden rounded-md bg-white shadow-[var(--shadow-sm)]">
         {query.isLoading ? (
           <LoadingBlock label="Loading plans…" slow={slow} />
         ) : query.isError ? (
@@ -131,17 +142,20 @@ export function PlansPage() {
           <>
             <PlanTable
               plans={onSale}
+              sold={sold}
               onEdit={setEditing}
               onArchive={setArchiving}
               pending={archive.isPending}
             />
             {archived.length > 0 && (
               <>
-                <p className="border-y border-slate-200 bg-slate-50/60 px-4 py-2 text-xs font-medium tracking-wide text-slate-500 uppercase">
+                <p className="sq-lbl border-t border-slate-200 bg-slate-200 px-3.5 py-2.5">
                   Archived — not on sale, history kept
                 </p>
                 <PlanTable
                   plans={archived}
+                  sold={sold}
+                  head={false}
                   onEdit={setEditing}
                   onArchive={setArchiving}
                   pending={archive.isPending}
@@ -151,6 +165,11 @@ export function PlansPage() {
           </>
         )}
       </div>
+
+      <p className="mt-3.5 text-xs text-slate-500">
+        Restoring a plan puts it back on sale at the desk but not in the member app — the app flag
+        has to be re-ticked.
+      </p>
 
       <PlanDialog
         plan={editing}
@@ -243,80 +262,107 @@ export function PlansPage() {
 
 function PlanTable({
   plans,
+  sold,
   onEdit,
   onArchive,
   pending,
+  head = true,
 }: {
   plans: Plan[];
+  /** `timesSold` by plan id — only `GET /plans/:id` carries it. */
+  sold: Map<string, number>;
   onEdit: (plan: Plan) => void;
   onArchive: (plan: Plan) => void;
   pending: boolean;
+  head?: boolean;
 }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-left text-sm">
-        <thead className="border-b border-slate-200 text-xs tracking-wide text-slate-500 uppercase">
-          <tr>
-            <th scope="col" className="px-4 py-2 font-medium">
-              Plan
-            </th>
-            <th scope="col" className="px-4 py-2 font-medium">
-              Duration
-            </th>
-            <th scope="col" className="px-4 py-2 font-medium">
-              Price
-            </th>
-            <th scope="col" className="px-4 py-2 font-medium">
-              Where it shows
-            </th>
-            <th scope="col" className="px-4 py-2 font-medium">
-              <span className="sr-only">Actions</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {plans.map((plan) => (
-            <tr key={plan.id} className="hover:bg-slate-50">
-              <td className="px-4 py-2.5">
-                <span className="font-medium text-slate-900">{plan.name}</span>
-                {plan.description && (
-                  <span className="block text-xs text-slate-500">{plan.description}</span>
-                )}
-              </td>
-              <td className="px-4 py-2.5 whitespace-nowrap text-slate-600">{plan.durationLabel}</td>
-              <td className="px-4 py-2.5 whitespace-nowrap font-medium text-slate-800">
-                {formatMoney(plan.price)}
-              </td>
-              <td className="px-4 py-2.5">
-                <div className="flex flex-wrap gap-1">
-                  {plan.archivedAt ? (
-                    <Badge tone="slate">Archived</Badge>
-                  ) : (
-                    <>
-                      <Badge tone={plan.isActive ? 'green' : 'slate'}>
-                        {plan.isActive ? 'On sale at the desk' : 'Not on sale'}
-                      </Badge>
-                      {plan.isPublic && <Badge tone="indigo">In the app</Badge>}
-                    </>
-                  )}
-                </div>
-              </td>
-              <td className="px-4 py-2.5">
-                <div className="flex justify-end gap-1">
-                  <Button variant="ghost" size="sm" onClick={() => onEdit(plan)} disabled={pending}>
-                    Edit
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => onArchive(plan)} disabled={pending}>
-                    {plan.archivedAt ? 'Restore' : 'Archive'}
-                  </Button>
-                </div>
-              </td>
+      <table className="w-full">
+        {head && (
+          <thead>
+            <tr className="bg-slate-200">
+              <th scope="col" className="sq-th">
+                Plan
+              </th>
+              <th scope="col" className="sq-th">
+                Duration
+              </th>
+              <th scope="col" className="sq-th">
+                Price
+              </th>
+              <th scope="col" className="sq-th">
+                Sold
+              </th>
+              <th scope="col" className="sq-th">
+                Reach
+              </th>
+              <th scope="col" className="sq-th">
+                <span className="sr-only">Actions</span>
+              </th>
             </tr>
-          ))}
+          </thead>
+        )}
+        <tbody>
+          {plans.map((plan) => {
+            // Archived rows stay in the table but step back a level.
+            const dim = plan.archivedAt ? 'opacity-70' : '';
+            return (
+              <tr key={plan.id} className="hover:bg-slate-100">
+                <td className={`sq-cell ${dim} ${head ? '' : 'border-t-0'}`}>
+                  <p className="text-slate-900">{plan.name}</p>
+                  {plan.description && (
+                    <p className="mt-0.5 text-[11px] text-slate-500">{plan.description}</p>
+                  )}
+                </td>
+                <td className={`sq-cell tnum whitespace-nowrap ${dim} ${head ? '' : 'border-t-0'}`}>
+                  {plan.durationLabel}
+                </td>
+                <td
+                  className={`sq-cell tnum whitespace-nowrap text-slate-900 ${dim} ${head ? '' : 'border-t-0'}`}
+                >
+                  {formatMoney(plan.price)}
+                </td>
+                <td className={`sq-cell tnum ${dim} ${head ? '' : 'border-t-0'}`}>
+                  {sold.get(plan.id) ?? '—'}
+                </td>
+                <td className={`sq-cell ${dim} ${head ? '' : 'border-t-0'}`}>
+                  <PlanReach plan={plan} />
+                </td>
+                <td className={`sq-cell text-right ${head ? '' : 'border-t-0'}`}>
+                  <div className="flex justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onEdit(plan)}
+                      disabled={pending}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onArchive(plan)}
+                      disabled={pending}
+                    >
+                      {plan.archivedAt ? 'Restore' : 'Archive'}
+                    </Button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
   );
+}
+
+/** Where a plan can actually be bought, as one phrase rather than two badges. */
+function PlanReach({ plan }: { plan: Plan }) {
+  if (plan.archivedAt) return <span className="text-slate-500">Archived</span>;
+  if (!plan.isActive) return <Badge tone="slate">Off sale</Badge>;
+  return <Badge tone="green">{plan.isPublic ? 'Desk · app' : 'Desk only'}</Badge>;
 }
 
 function PlanDialog({

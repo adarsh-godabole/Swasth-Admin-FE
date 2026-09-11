@@ -228,7 +228,9 @@ export function StackedShareBar({
           const href = hrefFor?.(index);
 
           const inner = fits ? (
-            <span className="text-xs font-semibold text-white">{point.value}</span>
+            <span className="text-xs font-medium" style={{ color: labelOn(colors[index]) }}>
+              {point.value}
+            </span>
           ) : null;
 
           const shared = {
@@ -292,4 +294,21 @@ export function StackedShareBar({
       </ul>
     </div>
   );
+}
+
+/**
+ * A segment label has to sit on whatever fill it lands on, and this bar mixes
+ * a light green with a dark neutral. Pick ink or paper by the fill's relative
+ * luminance rather than assuming one of them always wins.
+ */
+function labelOn(fill: string | undefined): string {
+  if (!fill) return 'var(--color-neutral-100)';
+  const hex = fill.replace('#', '');
+  if (hex.length !== 6) return 'var(--color-neutral-100)';
+  const [r, g, b] = [0, 2, 4].map((offset) => {
+    const channel = parseInt(hex.slice(offset, offset + 2), 16) / 255;
+    return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  });
+  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return luminance > 0.32 ? '#12131c' : 'var(--color-neutral-100)';
 }

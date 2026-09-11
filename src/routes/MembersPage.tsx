@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Badge, StatusBadge } from '../components/Badge';
-import { Button } from '../components/Button';
+import { Button, IconButton } from '../components/Button';
 import { EmptyState, ErrorState, LoadingBlock } from '../components/states';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useSlowRequest } from '../hooks/useSlowRequest';
-import { formatDate, formatPhone } from '../lib/format';
+import { formatDate, formatMoney, formatPhone, memberName } from '../lib/format';
 import { useMemberList } from '../members/queries';
+import { useMemberStats } from '../members/insightQueries';
 import { STATUS_LABELS } from '../api/types';
 import type {
   GymUserStatus,
@@ -14,10 +14,10 @@ import type {
   MemberSortBy,
   MembershipFilter,
   MemberListParams,
+  MemberStats,
   SortOrder,
 } from '../api/types';
-import { summariseMembership } from '../members/membership';
-import { formatMoney } from '../lib/format';
+import { membershipProgress, summariseMembership } from '../members/membership';
 
 const PAGE_SIZE = 20;
 
@@ -28,12 +28,16 @@ const PAGE_SIZE = 20;
  * it separates paying members from people who have never bought anything,
  * however they arrived.
  *
- * Everyone is the default view; the rest narrow it down from the filter bar.
+ * There is no "Everyone" filter: everyone is what the list shows when nothing
+ * is selected. The entries below narrow it down, and each one toggles off back
+ * to the full list.
  */
 type View = 'ALL' | MembershipFilter;
 
-const VIEWS: { id: View; label: string; blurb: string }[] = [
-  { id: 'ALL', label: 'Everyone', blurb: 'Every person linked to this gym.' },
+/** The unfiltered list — the default, and never a button in the filter row. */
+const ALL_VIEW = { id: 'ALL' as const, blurb: 'Every person linked to this gym.' };
+
+const FILTERS: { id: MembershipFilter; label: string; blurb: string }[] = [
   {
     id: 'ACTIVE',
     label: 'Active',
@@ -58,12 +62,12 @@ const VIEWS: { id: View; label: string; blurb: string }[] = [
 ];
 
 /**
- * Not offered in the filter by default — it is where the Insights membership
- * chart drills into, and it only appears once selected. `ACTIVE_NOT_EXPIRING`
- * is the slice of ACTIVE that excludes anyone already inside the expiring
- * window, so the count matches the chart segment exactly.
+ * Not offered in the filter row by default — it is where the Insights
+ * membership chart drills into, and it only appears once selected.
+ * `ACTIVE_NOT_EXPIRING` is the slice of ACTIVE that excludes anyone already
+ * inside the expiring window, so the count matches the chart segment exactly.
  */
-const DRILLDOWN_VIEW = {
+const DRILLDOWN_FILTER = {
   id: 'ACTIVE_NOT_EXPIRING' as const,
   label: 'Active, not expiring',
   blurb: 'Paid up with time left, excluding anyone already inside the expiring window.',
@@ -71,16 +75,6 @@ const DRILLDOWN_VIEW = {
 
 /** Windows offered for the Expiring view. The API caps `expiringInDays` at 90. */
 const EXPIRING_WINDOWS = [7, 15, 30, 60, 90];
-
-/** Reads naturally after a number: "2 active members", "22 leads", "1 person". */
-const COUNT_NOUN: Record<View, [singular: string, plural: string]> = {
-  ACTIVE: ['active member', 'active members'],
-  ACTIVE_NOT_EXPIRING: ['active member', 'active members'],
-  EXPIRING: ['expiring member', 'expiring members'],
-  EXPIRED: ['expired member', 'expired members'],
-  NONE: ['lead', 'leads'],
-  ALL: ['person', 'people'],
-};
 
 const EMPTY_TITLES: Record<View, string> = {
   ACTIVE: 'Nobody has an active membership',
@@ -92,18 +86,20 @@ const EMPTY_TITLES: Record<View, string> = {
 };
 
 const EMPTY_DESCRIPTIONS: Record<View, string> = {
-  ACTIVE: 'Sell a plan from a member\u2019s page and they\u2019ll appear here.',
+  ACTIVE: 'Sell a plan from a member’s page and they’ll appear here.',
   ACTIVE_NOT_EXPIRING: 'Everyone with a live membership is expiring soon.',
   EXPIRING: 'Try a longer window, or pick Active instead.',
-  EXPIRED: 'Good news \u2014 nobody has lapsed.',
+  EXPIRED: 'Good news — nobody has lapsed.',
   NONE: 'Everyone linked to this gym has bought a plan.',
   ALL: 'Register the first walk-in to get started.',
 };
 
-const SORTABLE: { field: MemberSortBy; label: string; className?: string }[] = [
-  { field: 'fullName', label: 'Name' },
-  { field: 'joinedAt', label: 'Joined' },
-  { field: 'lastVisitAt', label: 'Last visit' },
+/** Sorting is one button cycling a named order, not a row of arrows per column. */
+const SORTS: { label: string; sortBy: MemberSortBy; sortOrder: SortOrder }[] = [
+  { label: 'Joined, newest', sortBy: 'joinedAt', sortOrder: 'desc' },
+  { label: 'Joined, oldest', sortBy: 'joinedAt', sortOrder: 'asc' },
+  { label: 'Name, A–Z', sortBy: 'fullName', sortOrder: 'asc' },
+  { label: 'Last visit, recent', sortBy: 'lastVisitAt', sortOrder: 'desc' },
 ];
 
 export function MembersPage() {
@@ -174,73 +170,98 @@ export function MembersPage() {
 
   const list = useMemberList(query);
   const slow = useSlowRequest(list.isLoading);
+  // Feeds the counts on the filter row: one request, and a true partition.
+  const stats = useMemberStats(expiringInDays);
 
   const data = list.data;
-  const availableViews = view === DRILLDOWN_VIEW.id ? [DRILLDOWN_VIEW, ...VIEWS] : VIEWS;
-  const activeView = availableViews.find((entry) => entry.id === view) ?? VIEWS[0];
+  const availableFilters =
+    view === DRILLDOWN_FILTER.id ? [DRILLDOWN_FILTER, ...FILTERS] : FILTERS;
+  const activeView = availableFilters.find((entry) => entry.id === view) ?? ALL_VIEW;
   const filtered = Boolean(debouncedSearch || status);
   const anyFilter = filtered || view !== 'ALL';
+  const sortIndex = Math.max(
+    0,
+    SORTS.findIndex((sort) => sort.sortBy === sortBy && sort.sortOrder === sortOrder),
+  );
+  const currentSort = SORTS[sortIndex];
 
-  function toggleSort(field: MemberSortBy) {
-    // Re-sorting returns to page 1 — staff expect to see the new top of the list.
-    if (field === sortBy) {
-      update({ sortOrder: sortOrder === 'asc' ? 'desc' : 'asc' });
-    } else {
-      // Names read best A→Z; dates read best newest-first.
-      update({ sortBy: field, sortOrder: field === 'fullName' ? 'asc' : 'desc' });
-    }
+  function cycleSort() {
+    const next = SORTS[(sortIndex + 1) % SORTS.length];
+    update({ sortBy: next.sortBy, sortOrder: next.sortOrder });
   }
 
   return (
     <div>
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="flex flex-wrap items-end justify-between gap-5">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">Members</h1>
-          <p className="mt-0.5 text-sm text-slate-500">
-            {data ? `${data.total} ${COUNT_NOUN[view][data.total === 1 ? 0 : 1]}` : ' '}
-            {view === 'EXPIRING' && data ? ` within ${expiringInDays} days` : ''}
-          </p>
+          <h1 className="text-2xl font-medium text-slate-900">Members</h1>
+          <p className="mt-1 text-[13px] text-slate-600">{headline(stats.data)}</p>
         </div>
-        <Button onClick={() => navigate('/members/new')}>Register member</Button>
+
+        <div className="relative w-80">
+          <i
+            className="ph ph-magnifying-glass absolute top-1/2 left-3 -translate-y-1/2 text-base text-slate-500"
+            aria-hidden="true"
+          />
+          <input
+            ref={searchInput}
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Name, phone or member code"
+            aria-label="Search members"
+            className="block w-full rounded-md bg-white py-2 pr-10 pl-8.5 text-sm text-slate-900 ring-1 ring-slate-300 ring-inset placeholder:text-slate-500"
+          />
+          <kbd className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 rounded-sm px-1.5 py-0.5 text-[11px] text-slate-500 ring-1 ring-slate-300 ring-inset">
+            /
+          </kbd>
+        </div>
       </div>
 
-      <div className="mt-4 rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
-        <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 px-4 py-3">
-          <div className="relative min-w-64 flex-1">
-            <input
-              ref={searchInput}
-              type="search"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search name, phone or member code"
-              aria-label="Search members"
-              className="block w-full rounded-md bg-white px-3 py-2 pr-16 text-sm ring-1 ring-slate-300 ring-inset placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-600"
-            />
-            <kbd className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-xs text-slate-400">
-              /
-            </kbd>
-          </div>
-
-          <select
-            value={view}
-            onChange={(event) =>
-              update({ membership: event.target.value === 'ALL' ? undefined : event.target.value })
-            }
-            aria-label="Filter by membership"
-            className="rounded-md bg-white px-3 py-2 text-sm ring-1 ring-slate-300 ring-inset focus:ring-2 focus:ring-indigo-600"
-          >
-            {availableViews.map((entry) => (
-              <option key={entry.id} value={entry.id}>
+      <div className="mt-4.5 flex flex-wrap items-center justify-between gap-4">
+        <div className="seg" role="group" aria-label="Filter by membership">
+          {availableFilters.map((entry) => {
+            const on = entry.id === view;
+            return (
+              <button
+                key={entry.id}
+                type="button"
+                aria-pressed={on}
+                // Pressing the active filter again clears it, which is how you
+                // get back to everyone without a button that says so.
+                onClick={() => update({ membership: on ? undefined : entry.id })}
+                className="seg-opt"
+              >
                 {entry.label}
-              </option>
-            ))}
-          </select>
+                <span className="tnum" style={{ color: countColour(entry.id) }}>
+                  {viewCount(entry.id, stats.data)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {(view === 'EXPIRING' || view === 'ACTIVE_NOT_EXPIRING') && (
+            <select
+              value={expiringInDays}
+              onChange={(event) => update({ days: event.target.value })}
+              aria-label="Expiring window"
+              className="rounded-md bg-white px-2 py-1.5 text-[13px] text-slate-700 ring-1 ring-slate-300 ring-inset"
+            >
+              {EXPIRING_WINDOWS.map((days) => (
+                <option key={days} value={days}>
+                  Within {days} days
+                </option>
+              ))}
+            </select>
+          )}
 
           <select
             value={status ?? ''}
             onChange={(event) => update({ status: event.target.value || undefined })}
             aria-label="Filter by status"
-            className="rounded-md bg-white px-3 py-2 text-sm ring-1 ring-slate-300 ring-inset focus:ring-2 focus:ring-indigo-600"
+            className="rounded-md bg-white px-2 py-1.5 text-[13px] text-slate-700 ring-1 ring-slate-300 ring-inset"
           >
             <option value="">All statuses</option>
             {(Object.keys(STATUS_LABELS) as GymUserStatus[]).map((value) => (
@@ -250,22 +271,14 @@ export function MembersPage() {
             ))}
           </select>
 
-          {view === 'EXPIRING' && (
-            <label className="flex items-center gap-2 text-sm text-slate-600">
-              Within
-              <select
-                value={expiringInDays}
-                onChange={(event) => update({ days: event.target.value })}
-                className="rounded-md bg-white px-2 py-2 text-sm ring-1 ring-slate-300 ring-inset focus:ring-2 focus:ring-indigo-600"
-              >
-                {EXPIRING_WINDOWS.map((days) => (
-                  <option key={days} value={days}>
-                    {days} days
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
+          <span className="text-xs text-slate-500">Sorted by</span>
+          <Button variant="secondary" size="sm" onClick={cycleSort}>
+            {currentSort.label}
+            <i
+              className={`ph ph-arrow-${currentSort.sortOrder === 'asc' ? 'up' : 'down'} text-[13px]`}
+              aria-hidden="true"
+            />
+          </Button>
 
           {anyFilter && (
             <Button
@@ -276,21 +289,22 @@ export function MembersPage() {
                 update({ search: undefined, status: undefined, membership: undefined });
               }}
             >
-              Clear filters
+              Clear
             </Button>
           )}
-
-          {list.isFetching && !list.isLoading && (
-            <span className="text-xs text-slate-400" role="status">
-              Updating…
-            </span>
-          )}
         </div>
+      </div>
 
-        <p className="border-b border-slate-100 bg-slate-50/60 px-4 py-2 text-xs text-slate-500">
-          {activeView.blurb}
-        </p>
+      <p className="mt-3 text-xs text-slate-500">
+        {activeView.blurb}
+        {list.isFetching && !list.isLoading && (
+          <span className="ml-2 text-slate-400" role="status">
+            Updating…
+          </span>
+        )}
+      </p>
 
+      <div className="mt-3 overflow-hidden rounded-md bg-white shadow-[var(--shadow-sm)]">
         {list.isLoading ? (
           <LoadingBlock label="Loading members…" slow={slow} />
         ) : list.isError ? (
@@ -319,7 +333,7 @@ export function MembersPage() {
                     variant="secondary"
                     onClick={() => {
                       setSearch('');
-                      update({ search: undefined, status: undefined, membership: undefined });
+                      update({ search: undefined, status: undefined });
                     }}
                   >
                     Clear filters
@@ -335,119 +349,59 @@ export function MembersPage() {
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="border-b border-slate-200 text-xs tracking-wide text-slate-500 uppercase">
-                  <tr>
-                    <th scope="col" className="px-4 py-2 font-medium">
-                      Code
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-slate-200">
+                    <th scope="col" className="sq-th">
+                      Member
                     </th>
-                    {SORTABLE.slice(0, 1).map((column) => (
-                      <SortHeader
-                        key={column.field}
-                        column={column}
-                        sortBy={sortBy}
-                        sortOrder={sortOrder}
-                        onSort={toggleSort}
-                      />
-                    ))}
-                    <th scope="col" className="px-4 py-2 font-medium">
+                    <th scope="col" className="sq-th">
                       Phone
                     </th>
-                    <th scope="col" className="px-4 py-2 font-medium">
-                      Status
-                    </th>
-                    <th scope="col" className="px-4 py-2 font-medium">
+                    <th scope="col" className="sq-th w-58">
                       Membership
                     </th>
-                    <th scope="col" className="px-4 py-2 font-medium">
+                    <th scope="col" className="sq-th">
+                      Money
+                    </th>
+                    <th scope="col" className="sq-th">
                       App
                     </th>
-                    {SORTABLE.slice(1).map((column) => (
-                      <SortHeader
-                        key={column.field}
-                        column={column}
-                        sortBy={sortBy}
-                        sortOrder={sortOrder}
-                        onSort={toggleSort}
-                      />
-                    ))}
+                    <th scope="col" className="sq-th">
+                      Last visit
+                    </th>
+                    <th scope="col" className="sq-th" />
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody>
                   {data.items.map((member) => (
-                    <tr key={member.id} className="hover:bg-slate-50 focus-within:bg-slate-50">
-                      <td className="px-4 py-2.5 font-mono text-xs text-slate-600">
-                        {member.memberCode ?? <span className="text-slate-400">No code</span>}
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <Link
-                          to={`/members/${member.id}`}
-                          className="font-medium text-indigo-700 hover:underline"
-                        >
-                          {member.fullName ?? (
-                            <span className="italic text-slate-500">Unnamed member</span>
-                          )}
-                        </Link>
-                        {member.medicalNotes && (
-                          <span
-                            className="ml-2 align-middle text-xs text-amber-600"
-                            title="Has medical notes"
-                          >
-                            ⚕
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2.5 text-slate-600">{formatPhone(member.phone)}</td>
-                      <td className="px-4 py-2.5">
-                        <StatusBadge status={member.status} />
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <MembershipCell member={member} />
-                      </td>
-                      <td className="px-4 py-2.5">
-                        {member.hasAppAccount ? (
-                          <Badge tone="indigo">Installed</Badge>
-                        ) : (
-                          <span className="text-xs text-slate-400">Not yet</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2.5 whitespace-nowrap text-slate-600">
-                        {formatDate(member.joinedAt)}
-                      </td>
-                      <td className="px-4 py-2.5 whitespace-nowrap text-slate-600">
-                        {formatDate(member.lastVisitAt)}
-                      </td>
-                    </tr>
+                    <MemberRow key={member.id} member={member} />
                   ))}
                 </tbody>
               </table>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-sm">
-              <p className="text-slate-500">
+            <div className="flex items-center justify-between border-t border-slate-200 px-3.5 py-3">
+              <p className="text-xs text-slate-500">
                 Showing {(data.page - 1) * data.limit + 1}–
                 {Math.min(data.page * data.limit, data.total)} of {data.total}
               </p>
               <div className="flex items-center gap-2">
-                <Button
-                  variant="secondary"
-                  size="sm"
+                <IconButton
+                  icon="caret-left"
+                  label="Previous page"
                   disabled={data.page <= 1}
                   onClick={() => update({ page: String(data.page - 1) }, false)}
-                >
-                  Previous
-                </Button>
-                <span className="text-slate-500">
+                />
+                <span className="tnum text-xs text-slate-500">
                   Page {data.page} of {data.totalPages || 1}
                 </span>
-                <Button
-                  variant="secondary"
-                  size="sm"
+                <IconButton
+                  icon="caret-right"
+                  label="Next page"
                   disabled={data.page >= data.totalPages}
                   onClick={() => update({ page: String(data.page + 1) }, false)}
-                >
-                  Next
-                </Button>
+                />
               </div>
             </div>
           </>
@@ -457,57 +411,152 @@ export function MembersPage() {
   );
 }
 
-function SortHeader({
-  column,
-  sortBy,
-  sortOrder,
-  onSort,
-}: {
-  column: { field: MemberSortBy; label: string };
-  sortBy: MemberSortBy;
-  sortOrder: SortOrder;
-  onSort: (field: MemberSortBy) => void;
-}) {
-  const active = column.field === sortBy;
+/** "5 with a live membership · 27 people linked to this gym" */
+function headline(stats: MemberStats | undefined): string {
+  if (!stats) return ' ';
+  const people = `${stats.totalMembers} ${stats.totalMembers === 1 ? 'person' : 'people'} linked to this gym`;
+  return `${stats.activeTotal} with a live membership · ${people}`;
+}
+
+function viewCount(view: MembershipFilter, stats: MemberStats | undefined): string {
+  if (!stats) return '';
+  switch (view) {
+    case 'ACTIVE':
+      return String(stats.activeTotal);
+    case 'ACTIVE_NOT_EXPIRING':
+      return String(stats.buckets.active);
+    case 'EXPIRING':
+      return String(stats.buckets.expiringSoon);
+    case 'EXPIRED':
+      return String(stats.buckets.expired);
+    case 'NONE':
+      return String(stats.buckets.never);
+  }
+}
+
+/** The count borrows the state's colour; the label stays neutral. */
+function countColour(view: MembershipFilter): string {
+  switch (view) {
+    case 'ACTIVE':
+    case 'ACTIVE_NOT_EXPIRING':
+      return 'var(--ok-txt)';
+    case 'EXPIRING':
+      return 'var(--warn-txt)';
+    case 'EXPIRED':
+      return 'var(--bad-txt)';
+    default:
+      return 'var(--color-neutral-500)';
+  }
+}
+
+function MemberRow({ member }: { member: Member }) {
   return (
-    <th
-      scope="col"
-      className="px-4 py-2 font-medium"
-      aria-sort={active ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}
-    >
-      <button
-        type="button"
-        onClick={() => onSort(column.field)}
-        className={`inline-flex items-center gap-1 uppercase hover:text-slate-700 ${
-          active ? 'text-slate-800' : ''
-        }`}
-      >
-        {column.label}
-        <span aria-hidden="true" className={active ? '' : 'text-slate-300'}>
-          {active ? (sortOrder === 'asc' ? '↑' : '↓') : '↕'}
-        </span>
-      </button>
-    </th>
+    <tr className="hover:bg-slate-100 focus-within:bg-slate-100">
+      <td className="sq-cell">
+        <p>
+          <Link
+            to={`/members/${member.id}`}
+            className="text-[13px] text-indigo-700 hover:underline"
+          >
+            {memberName(member)}
+          </Link>
+          {member.medicalNotes && (
+            <i
+              className="ph-fill ph-first-aid-kit ml-1.5 align-[-1px] text-[13px] text-red-500"
+              title="Has medical notes"
+              role="img"
+              aria-label="Has medical notes"
+            />
+          )}
+        </p>
+        <p className="tnum mt-0.5 text-[11px] text-slate-500">
+          {member.memberCode ?? 'No code'} · joined {formatDate(member.joinedAt)}
+        </p>
+      </td>
+      <td className="sq-cell tnum">{formatPhone(member.phone)}</td>
+      <td className="sq-cell">
+        <MembershipCell member={member} />
+      </td>
+      <td className="sq-cell">
+        {member.membership && member.membership.balance > 0 ? (
+          <span className="pill pill-warn tnum">
+            {formatMoney(member.membership.balance)} owing
+          </span>
+        ) : (
+          <span className="text-slate-500">Settled</span>
+        )}
+      </td>
+      <td className="sq-cell">
+        {member.hasAppAccount ? (
+          <i
+            className="ph-fill ph-device-mobile text-[15px] text-indigo-400"
+            title="App installed"
+            role="img"
+            aria-label="App installed"
+          />
+        ) : (
+          <i
+            className="ph ph-device-mobile-slash text-[15px] text-slate-300"
+            title="No app yet"
+            role="img"
+            aria-label="No app yet"
+          />
+        )}
+      </td>
+      <td className="sq-cell tnum whitespace-nowrap">{formatDate(member.lastVisitAt)}</td>
+      <td className="sq-cell text-right">
+        <Link
+          to={`/members/${member.id}`}
+          aria-label={`Open ${memberName(member)}`}
+          className="text-slate-500 hover:text-slate-700"
+        >
+          <i className="ph ph-caret-right" aria-hidden="true" />
+        </Link>
+      </td>
+    </tr>
   );
 }
 
 /**
- * What the member has bought, at a glance. A balance owing is called out
- * separately — it is the thing the desk needs to act on.
+ * What the member has bought, as one line plus a countdown bar. The bar fills
+ * as the term runs down, so a nearly-full bar in warning colour is what the
+ * eye catches when scanning the column — no second badge needed.
  */
 function MembershipCell({ member }: { member: Member }) {
   const summary = summariseMembership(member.membership);
+  const progress = membershipProgress(member.membership);
+
+  if (!progress) {
+    return (
+      <div className="min-w-40">
+        <span className="text-xs text-slate-500">{summary.label}</span>
+        {summary.detail && <p className="mt-1 text-[11px] text-slate-500">{summary.detail}</p>}
+      </div>
+    );
+  }
+
+  // `summariseMembership` writes "3 Months · 5 days left"; the plan name stays
+  // neutral and only the countdown half takes the state colour.
+  const [plan, ...rest] = summary.label.split(' · ');
+
   return (
     <div className="min-w-40">
-      <Badge tone={summary.tone}>{summary.label}</Badge>
-      {member.membership && member.membership.balance > 0 && (
-        <span className="mt-1 block text-xs font-medium text-amber-700">
-          {formatMoney(member.membership.balance)} owing
-        </span>
-      )}
-      {member.membership && summary.detail && !member.membership.balance && (
-        <span className="mt-1 block text-xs text-slate-400">{summary.detail}</span>
-      )}
+      <p className="text-xs text-slate-700">
+        {plan}
+        {rest.length > 0 && (
+          <>
+            {' · '}
+            <span style={{ color: `var(--${progress.tone}-txt)` }}>{rest.join(' · ')}</span>
+          </>
+        )}
+      </p>
+      <div className="mt-1.5 h-[3px] rounded-full bg-slate-300">
+        <div
+          className="h-[3px] rounded-full"
+          style={{ width: `${progress.percent}%`, background: `var(--${progress.tone})` }}
+        />
+      </div>
+      {summary.detail && <p className="mt-1 text-[11px] text-slate-500">{summary.detail}</p>}
     </div>
   );
 }
