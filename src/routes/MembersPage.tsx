@@ -27,10 +27,13 @@ const PAGE_SIZE = 20;
  * Splitting on `membershipStatus` rather than `source` is the cleaner divide —
  * it separates paying members from people who have never bought anything,
  * however they arrived.
+ *
+ * Everyone is the default view; the rest narrow it down from the filter bar.
  */
-type Tab = 'ALL' | MembershipFilter;
+type View = 'ALL' | MembershipFilter;
 
-const TABS: { id: Tab; label: string; blurb: string }[] = [
+const VIEWS: { id: View; label: string; blurb: string }[] = [
+  { id: 'ALL', label: 'Everyone', blurb: 'Every person linked to this gym.' },
   {
     id: 'ACTIVE',
     label: 'Active',
@@ -52,26 +55,25 @@ const TABS: { id: Tab; label: string; blurb: string }[] = [
     blurb:
       'Never bought a plan. Mostly people who signed up in the mobile app and were auto-linked to the gym — they may never have paid or visited.',
   },
-  { id: 'ALL', label: 'Everyone', blurb: 'Every person linked to this gym.' },
 ];
 
 /**
- * Not in the tab bar by default — it is where the Insights membership chart
- * drills into, and it only appears once selected. `ACTIVE_NOT_EXPIRING` is the
- * slice of ACTIVE that excludes anyone already inside the expiring window, so
- * the count matches the chart segment exactly.
+ * Not offered in the filter by default — it is where the Insights membership
+ * chart drills into, and it only appears once selected. `ACTIVE_NOT_EXPIRING`
+ * is the slice of ACTIVE that excludes anyone already inside the expiring
+ * window, so the count matches the chart segment exactly.
  */
-const DRILLDOWN_TAB = {
+const DRILLDOWN_VIEW = {
   id: 'ACTIVE_NOT_EXPIRING' as const,
   label: 'Active, not expiring',
   blurb: 'Paid up with time left, excluding anyone already inside the expiring window.',
 };
 
-/** Windows offered for the Expiring tab. The API caps `expiringInDays` at 90. */
+/** Windows offered for the Expiring view. The API caps `expiringInDays` at 90. */
 const EXPIRING_WINDOWS = [7, 15, 30, 60, 90];
 
 /** Reads naturally after a number: "2 active members", "22 leads", "1 person". */
-const COUNT_NOUN: Record<Tab, [singular: string, plural: string]> = {
+const COUNT_NOUN: Record<View, [singular: string, plural: string]> = {
   ACTIVE: ['active member', 'active members'],
   ACTIVE_NOT_EXPIRING: ['active member', 'active members'],
   EXPIRING: ['expiring member', 'expiring members'],
@@ -80,7 +82,7 @@ const COUNT_NOUN: Record<Tab, [singular: string, plural: string]> = {
   ALL: ['person', 'people'],
 };
 
-const EMPTY_TITLES: Record<Tab, string> = {
+const EMPTY_TITLES: Record<View, string> = {
   ACTIVE: 'Nobody has an active membership',
   ACTIVE_NOT_EXPIRING: 'Nobody is active outside the expiring window',
   EXPIRING: 'Nothing expiring in this window',
@@ -89,10 +91,10 @@ const EMPTY_TITLES: Record<Tab, string> = {
   ALL: 'No members yet',
 };
 
-const EMPTY_DESCRIPTIONS: Record<Tab, string> = {
+const EMPTY_DESCRIPTIONS: Record<View, string> = {
   ACTIVE: 'Sell a plan from a member\u2019s page and they\u2019ll appear here.',
   ACTIVE_NOT_EXPIRING: 'Everyone with a live membership is expiring soon.',
-  EXPIRING: 'Try a longer window, or check the Active tab.',
+  EXPIRING: 'Try a longer window, or pick Active instead.',
   EXPIRED: 'Good news \u2014 nobody has lapsed.',
   NONE: 'Everyone linked to this gym has bought a plan.',
   ALL: 'Register the first walk-in to get started.',
@@ -109,7 +111,7 @@ export function MembersPage() {
   const [params, setParams] = useSearchParams();
   const searchInput = useRef<HTMLInputElement>(null);
 
-  const tab = (params.get('tab') as Tab | null) ?? 'ACTIVE';
+  const view = (params.get('membership') as View | null) ?? 'ALL';
   const expiringInDays = Number(params.get('days') ?? '7') || 7;
   const status = (params.get('status') as GymUserStatus | null) ?? undefined;
   const sortBy = (params.get('sortBy') as MemberSortBy | null) ?? 'joinedAt';
@@ -166,17 +168,18 @@ export function MembersPage() {
     sortOrder,
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
     ...(status ? { status } : {}),
-    ...(tab === 'ALL' ? {} : { membershipStatus: tab }),
-    ...(tab === 'EXPIRING' || tab === 'ACTIVE_NOT_EXPIRING' ? { expiringInDays } : {}),
+    ...(view === 'ALL' ? {} : { membershipStatus: view }),
+    ...(view === 'EXPIRING' || view === 'ACTIVE_NOT_EXPIRING' ? { expiringInDays } : {}),
   };
 
   const list = useMemberList(query);
   const slow = useSlowRequest(list.isLoading);
 
   const data = list.data;
-  const visibleTabs = tab === DRILLDOWN_TAB.id ? [DRILLDOWN_TAB, ...TABS] : TABS;
-  const activeTab = visibleTabs.find((entry) => entry.id === tab) ?? TABS[0];
+  const availableViews = view === DRILLDOWN_VIEW.id ? [DRILLDOWN_VIEW, ...VIEWS] : VIEWS;
+  const activeView = availableViews.find((entry) => entry.id === view) ?? VIEWS[0];
   const filtered = Boolean(debouncedSearch || status);
+  const anyFilter = filtered || view !== 'ALL';
 
   function toggleSort(field: MemberSortBy) {
     // Re-sorting returns to page 1 — staff expect to see the new top of the list.
@@ -194,32 +197,14 @@ export function MembersPage() {
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Members</h1>
           <p className="mt-0.5 text-sm text-slate-500">
-            {data ? `${data.total} ${COUNT_NOUN[tab][data.total === 1 ? 0 : 1]}` : ' '}
-            {tab === 'EXPIRING' && data ? ` within ${expiringInDays} days` : ''}
+            {data ? `${data.total} ${COUNT_NOUN[view][data.total === 1 ? 0 : 1]}` : ' '}
+            {view === 'EXPIRING' && data ? ` within ${expiringInDays} days` : ''}
           </p>
         </div>
         <Button onClick={() => navigate('/members/new')}>Register member</Button>
       </div>
 
       <div className="mt-4 rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
-        <div className="flex gap-1 border-b border-slate-200 px-2 pt-2" role="tablist">
-          {visibleTabs.map((entry) => (
-            <button
-              key={entry.id}
-              role="tab"
-              aria-selected={entry.id === tab}
-              onClick={() => update({ tab: entry.id })}
-              className={`-mb-px rounded-t-md border-b-2 px-3 py-2 text-sm font-medium ${
-                entry.id === tab
-                  ? 'border-indigo-600 text-indigo-700'
-                  : 'border-transparent text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              {entry.label}
-            </button>
-          ))}
-        </div>
-
         <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 px-4 py-3">
           <div className="relative min-w-64 flex-1">
             <input
@@ -237,6 +222,21 @@ export function MembersPage() {
           </div>
 
           <select
+            value={view}
+            onChange={(event) =>
+              update({ membership: event.target.value === 'ALL' ? undefined : event.target.value })
+            }
+            aria-label="Filter by membership"
+            className="rounded-md bg-white px-3 py-2 text-sm ring-1 ring-slate-300 ring-inset focus:ring-2 focus:ring-indigo-600"
+          >
+            {availableViews.map((entry) => (
+              <option key={entry.id} value={entry.id}>
+                {entry.label}
+              </option>
+            ))}
+          </select>
+
+          <select
             value={status ?? ''}
             onChange={(event) => update({ status: event.target.value || undefined })}
             aria-label="Filter by status"
@@ -250,7 +250,7 @@ export function MembersPage() {
             ))}
           </select>
 
-          {tab === 'EXPIRING' && (
+          {view === 'EXPIRING' && (
             <label className="flex items-center gap-2 text-sm text-slate-600">
               Within
               <select
@@ -267,13 +267,13 @@ export function MembersPage() {
             </label>
           )}
 
-          {filtered && (
+          {anyFilter && (
             <Button
               variant="ghost"
               size="sm"
               onClick={() => {
                 setSearch('');
-                update({ search: undefined, status: undefined });
+                update({ search: undefined, status: undefined, membership: undefined });
               }}
             >
               Clear filters
@@ -288,7 +288,7 @@ export function MembersPage() {
         </div>
 
         <p className="border-b border-slate-100 bg-slate-50/60 px-4 py-2 text-xs text-slate-500">
-          {activeTab.blurb}
+          {activeView.blurb}
         </p>
 
         {list.isLoading ? (
@@ -301,30 +301,32 @@ export function MembersPage() {
           />
         ) : !data || data.items.length === 0 ? (
           <EmptyState
-            title={filtered ? 'No members match those filters' : EMPTY_TITLES[tab]}
+            title={filtered ? 'No members match those filters' : EMPTY_TITLES[view]}
             description={
               filtered
                 ? 'Try a different search term, or clear the filters.'
-                : EMPTY_DESCRIPTIONS[tab]
+                : EMPTY_DESCRIPTIONS[view]
             }
             action={
               filtered ? (
                 <div className="flex flex-wrap justify-center gap-2">
-                  {tab !== 'ALL' && debouncedSearch && (
-                    <Button onClick={() => update({ tab: 'ALL' })}>Search everyone</Button>
+                  {view !== 'ALL' && debouncedSearch && (
+                    <Button onClick={() => update({ membership: undefined })}>
+                      Search everyone
+                    </Button>
                   )}
                   <Button
                     variant="secondary"
                     onClick={() => {
                       setSearch('');
-                      update({ search: undefined, status: undefined });
+                      update({ search: undefined, status: undefined, membership: undefined });
                     }}
                   >
                     Clear filters
                   </Button>
                 </div>
               ) : (
-                tab !== 'NONE' && (
+                view !== 'NONE' && (
                   <Button onClick={() => navigate('/members/new')}>Register member</Button>
                 )
               )

@@ -205,7 +205,7 @@ export function InsightsPage() {
           label="Expiring soon"
           value={String(buckets?.expiringSoon ?? 0)}
           hint={`Within ${horizon} days`}
-          to={`/members?tab=EXPIRING&days=${horizon}`}
+          to={`/members?membership=EXPIRING&days=${horizon}`}
           tone={(buckets?.expiringSoon ?? 0) > 0 ? 'amber' : undefined}
         />
         <StatTile
@@ -250,7 +250,7 @@ export function InsightsPage() {
             <p className="text-xs text-slate-500">
               {payingShare}% have bought a plan at some point. The rest are leads — mostly app
               signups auto-linked to the gym.{' '}
-              <Link to="/members?tab=NONE" className="font-medium text-indigo-700 hover:underline">
+              <Link to="/members?membership=NONE" className="font-medium text-indigo-700 hover:underline">
                 See them
               </Link>
             </p>
@@ -261,7 +261,7 @@ export function InsightsPage() {
             colors={VIZ.ordinal4}
             total={totalMembers}
             hrefFor={(index) =>
-              `/members?tab=${BUCKET_FILTERS[MIX_BUCKETS[index].key]}&days=${horizon}`
+              `/members?membership=${BUCKET_FILTERS[MIX_BUCKETS[index].key]}&days=${horizon}`
             }
           />
         </ChartCard>

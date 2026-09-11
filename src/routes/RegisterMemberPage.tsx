@@ -127,7 +127,7 @@ export function RegisterMemberPage() {
                   size="sm"
                   onClick={() =>
                     navigate(
-                      `/members?tab=ALL&search=${encodeURIComponent(normalisePhone(values.phone))}`,
+                      `/members?search=${encodeURIComponent(normalisePhone(values.phone))}`,
                     )
                   }
                 >
