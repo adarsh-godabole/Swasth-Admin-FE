@@ -322,3 +322,49 @@ body {
 .sq-note-accent {
   border-color: var(--color-accent-700);
 }
+
+/*
+ * Printing. The portal is a dark theme; a poster printed as-is would be a
+ * black rectangle and would not scan. When printing, the rail and the page
+ * chrome drop out and the poster alone prints as ink on paper.
+ */
+@media print {
+  @page {
+    margin: 16mm;
+  }
+
+  html,
+  body,
+  #root {
+    height: auto;
+    background: #fff;
+    color: #000;
+  }
+
+  /* The shell pins itself to the viewport on screen, which would clip the
+     poster to one screenful on paper. */
+  body :where(aside) {
+    display: none !important;
+  }
+  body :where(main),
+  body :where(main) > * {
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+  body :where(div, main) {
+    height: auto !important;
+    max-height: none !important;
+  }
+
+  /* Anything that reads as a surface becomes paper, and all text becomes ink;
+     the QR keeps its own explicit black-on-white from the SVG. */
+  .print-poster,
+  .print-poster * {
+    background: transparent !important;
+    color: #000 !important;
+    box-shadow: none !important;
+  }
+  .print-poster .sq-lbl {
+    color: #444 !important;
+  }
+}

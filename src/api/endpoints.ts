@@ -7,6 +7,7 @@ import type {
   CreatePlanInput,
   CreateSubscriptionInput,
   DeactivateMemberInput,
+  DoorCode,
   Gym,
   Member,
   MemberListParams,
@@ -57,6 +58,16 @@ export const gyms = {
   /** No auth required — usable on the login screen. */
   current() {
     return request<Gym>('/gyms/current', { auth: false });
+  },
+
+  /** The code behind the door QR. Staff-only. */
+  doorCode() {
+    return request<DoorCode>('/gyms/current/check-in-code');
+  },
+
+  /** Issues a new code. Every printed poster stops working immediately. */
+  rotateDoorCode() {
+    return request<DoorCode>('/gyms/current/check-in-code/rotate', { method: 'POST' });
   },
 };
 

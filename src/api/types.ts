@@ -22,7 +22,7 @@ export type DurationUnit = 'DAY' | 'MONTH';
 export type PaymentMethod = 'CASH' | 'UPI' | 'CARD' | 'BANK_TRANSFER' | 'ONLINE' | 'OTHER';
 export type PaymentStatus = 'PAID' | 'PARTIAL' | 'PENDING';
 export type SubscriptionStatus = 'ACTIVE' | 'UPCOMING' | 'EXPIRED' | 'CANCELLED';
-export type CheckInSource = 'APP' | 'FRONT_DESK';
+export type CheckInSource = 'APP' | 'FRONT_DESK' | 'QR';
 
 /** Roles allowed to use this portal. Anything else gets 403 on every call. */
 export const STAFF_ROLES: readonly GymRole[] = ['GYM_ADMIN', 'OWNER'];
@@ -85,7 +85,13 @@ export const SUBSCRIPTION_STATUS_LABELS: Record<SubscriptionStatus, string> = {
 export const CHECK_IN_SOURCE_LABELS: Record<CheckInSource, string> = {
   APP: 'App',
   FRONT_DESK: 'Front desk',
+  QR: 'QR',
 };
+
+/** What the door poster encodes. Static, so it can be printed. */
+export interface DoorCode {
+  code: string;
+}
 
 export const ROLE_LABELS: Record<GymRole, string> = {
   MEMBER: 'Member',

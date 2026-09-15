@@ -7,6 +7,7 @@ import { MemberDetailPage } from './routes/MemberDetailPage';
 import { RegisterMemberPage } from './routes/RegisterMemberPage';
 import { NotStaffPage } from './routes/NotStaffPage';
 import { DeskPage } from './routes/DeskPage';
+import { DoorCodePage } from './routes/DoorCodePage';
 import { InsightsPage } from './routes/InsightsPage';
 import { PlansPage } from './routes/PlansPage';
 import { RenewalsPage } from './routes/RenewalsPage';
@@ -39,6 +40,7 @@ export function App() {
         <Route path="/members/new" element={<RegisterMemberPage />} />
         <Route path="/members/:id" element={<MemberDetailPage />} />
         <Route path="/desk" element={<DeskPage />} />
+        <Route path="/desk/qr" element={<DoorCodePage />} />
         {/* The old check-ins URL is the desk now — keep staff bookmarks working. */}
         <Route path="/check-ins" element={<Navigate to="/desk" replace />} />
         <Route path="/insights" element={<InsightsPage />} />

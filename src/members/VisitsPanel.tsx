@@ -122,7 +122,7 @@ export function VisitsPanel({ member }: { member: Member }) {
                   <span className="tnum text-slate-500">
                     {formatTime(visit.checkedInAt, timezone)}
                   </span>
-                  <Tag tone={visit.source === 'APP' ? 'accent' : 'neutral'}>
+                  <Tag tone={visit.source === 'FRONT_DESK' ? 'neutral' : 'accent'}>
                     {CHECK_IN_SOURCE_LABELS[visit.source]}
                   </Tag>
                 </div>

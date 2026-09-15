@@ -392,7 +392,7 @@ function RegisterRow({
           <span className="tnum ml-2 text-xs text-slate-500">{member.memberCode}</span>
         )}
       </span>
-      <Tag tone={checkIn.source === 'APP' ? 'accent' : 'neutral'}>
+      <Tag tone={checkIn.source === 'FRONT_DESK' ? 'neutral' : 'accent'}>
         {CHECK_IN_SOURCE_LABELS[checkIn.source]}
       </Tag>
     </li>
@@ -479,6 +479,20 @@ function DaySummary({ items, timezone }: { items: CheckIn[]; timezone: string | 
           )}
         </ul>
       </section>
+
+      <Link
+        to="/desk/qr"
+        className="flex items-center gap-3 rounded-md bg-white p-3.5 shadow-[var(--shadow-sm)] transition-shadow hover:shadow-[var(--shadow-md)]"
+      >
+        <i className="ph ph-qr-code shrink-0 text-xl text-indigo-400" aria-hidden="true" />
+        <span className="min-w-0 flex-1">
+          <span className="block text-[13px] text-slate-900">Door QR</span>
+          <span className="mt-0.5 block text-xs text-slate-500">
+            Members scan on the way in and check themselves in
+          </span>
+        </span>
+        <i className="ph ph-caret-right shrink-0 text-slate-500" aria-hidden="true" />
+      </Link>
 
       <p className="text-[11px] leading-relaxed text-slate-500">
         Arrivals only — the app has no check-out, so this is a register, not occupancy.
