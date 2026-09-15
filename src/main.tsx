@@ -6,7 +6,12 @@ import { ApiError } from './api/client';
 import { App } from './App';
 import { AuthProvider } from './auth/AuthProvider';
 import { ToastProvider } from './components/Toast';
+import { startTelemetry } from './telemetry';
 import './index.css';
+
+// Before the app renders, so an error thrown during the first paint is still
+// caught and reported.
+startTelemetry();
 
 const queryClient = new QueryClient({
   defaultOptions: {
